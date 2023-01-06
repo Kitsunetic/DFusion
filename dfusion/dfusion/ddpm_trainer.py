@@ -1,4 +1,4 @@
-from dfusion.diffusion_base import *
+from dfusion.dfusion.diffusion_base import *
 
 
 class DDPMTrainer(DiffusionBase):

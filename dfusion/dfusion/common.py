@@ -144,6 +144,10 @@ def discretized_gaussian_log_likelihood(x, means, log_scales):
 
 
 class DiagonalGaussianDistribution:
+    """
+    from https://github.com/CompVis/latent-diffusion/blob/e66308c7f2e64cb581c6d27ab6fbeb846828253b/ldm/modules/distributions/distributions.py#L24
+    """
+
     def __init__(self, parameters: Tensor, deterministic=False):
         self.parameters = parameters
         self.mean, self.logvar = th.chunk(parameters, 2, dim=1)

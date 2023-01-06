@@ -1,5 +1,5 @@
 import scipy.special
-from dfusion.diffusion_base import *
+from dfusion.dfusion.diffusion_base import *
 
 
 def log_min_exp(a, b, epsilon=1.0e-6):

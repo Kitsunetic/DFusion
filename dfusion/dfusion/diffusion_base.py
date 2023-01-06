@@ -1,4 +1,4 @@
-from dfusion.common import *
+from dfusion.dfusion.common import *
 
 
 class DiffusionBase(nn.Module):
