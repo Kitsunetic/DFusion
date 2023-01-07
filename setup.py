@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="dfusion",
-    version="0.0.0",
+    version="0.0.1",
     description="A library to make it easy to implement diffusion models",
     author="Kitsunetic",
     author_email="jh.shim.gg@gmail.com",

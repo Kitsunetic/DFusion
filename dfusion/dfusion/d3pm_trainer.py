@@ -1,8 +1,6 @@
 """
 referred to https://github.com/google-research/google-research/blob/master/d3pm/images/diffusion_categorical.py
 """
-# TODO Focal loss?
-
 from dfusion.dfusion.d3pm_utils import *
 
 
@@ -25,6 +23,7 @@ class D3PMTrainer(nn.Module):
         transition_mat_type="uniform",
         transition_bands=None,
         hybrid_coeff=1.0,
+        focal_loss_gamma=0.0,
     ):
         assert loss_type in "kl | hybrid | cross_entropy_x_start".split(" | ")
         assert model_pred_type in "x_start | x_prev".split(" | ")
@@ -37,6 +36,7 @@ class D3PMTrainer(nn.Module):
         self.model_output_type = model_output_type
         self.transition_mat_type = transition_mat_type
         self.hybrid_coeff = hybrid_coeff
+        self.focal_loss_gamma = focal_loss_gamma
         self.num_timesteps = len(betas)
 
         # noise schedule caches - betas
@@ -281,7 +281,7 @@ class D3PMTrainer(nn.Module):
         assert kl.shape == x_start.shape
         kl = kl.flatten(1).mean(1) / math.log(2.0)
 
-        decoder_nll = -categorical_log_likelihood(x_start, model_logits)
+        decoder_nll = -categorical_log_likelihood(x_start, model_logits, gamma=self.focal_loss_gamma)
         assert decoder_nll.shape == x_start.shape
         decoder_nll = decoder_nll.flatten(1).mean(1) / math.log(2.0)
 
@@ -326,7 +326,7 @@ class D3PMTrainer(nn.Module):
           ce: cross entropy.
         """
 
-        ce = -categorical_log_likelihood(x_start, pred_x_start_logits)
+        ce = -categorical_log_likelihood(x_start, pred_x_start_logits, gamma=self.focal_loss_gamma)
         assert ce.shape == x_start.shape
         ce = ce.flatten(1).mean(1) / math.log(2.0)
 
@@ -334,7 +334,7 @@ class D3PMTrainer(nn.Module):
 
         return ce
 
-    def forward(self, denoise_fn: Callable[[Tensor, Tensor], Tensor], x_start: Tensor, x_start_logit: bool = False):
+    def forward(self, denoise_fn: Callable[[Tensor, Tensor], Tensor], x_start: Tensor, return_x_start: bool = False):
         # Add noise to data
         # noise_rng, time_rng = jax.random.split(rng)
         # noise = jax.random.uniform(noise_rng, shape=x_start.shape + (self.num_pixel_vals,))
@@ -368,7 +368,10 @@ class D3PMTrainer(nn.Module):
         else:
             raise NotImplementedError(self.loss_type)
 
-        return losses
+        if return_x_start:
+            return losses, pred_x_start_logits
+        else:
+            return losses
 
 
 def __test__():
@@ -382,14 +385,16 @@ def __test__():
         transition_mat_type="uniform",
         transition_bands=None,
         hybrid_coeff=1.0,
+        focal_loss_gamma=2.0,
     )
     # model = lambda x, t: th.cat([x, x], dim=1)  # any model that doubles the channel (only when learnt model variance)
     model = lambda x, t: th.rand(2, 3, 32, 32, 256)
     data = th.randint(0, 256, (2, 3, 32, 32))  # arbitrary shape
     # data = th.rand(2, 3, 32, 32, 256)
-    losses = diffusion_trainer(model, data)
+    losses, pred_x_start = diffusion_trainer(model, data, return_x_start=True)
     print(losses)
     # {'vlb': tensor([5.2729e-06, 5.2618e-05]), 'eps': tensor([0.0007, 0.0084]), 'loss': tensor([0.0007, 0.0082])}
+    print(pred_x_start.shape)
 
 
 if __name__ == "__main__":

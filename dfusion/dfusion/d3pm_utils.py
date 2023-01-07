@@ -1,4 +1,5 @@
 import scipy.special
+
 from dfusion.dfusion.diffusion_base import *
 
 
@@ -62,7 +63,7 @@ def categorical_kl_probs(probs1, probs2, eps=1.0e-6):
     return th.sum(out, dim=-1)
 
 
-def categorical_log_likelihood(x, logits):
+def categorical_log_likelihood(x, logits, gamma: float = 0.0):
     """Log likelihood of a discretized Gaussian specialized for image data.
 
     Assumes data `x` consists of integers [0, num_classes-1].
@@ -75,6 +76,8 @@ def categorical_log_likelihood(x, logits):
       log likelihoods
     """
     log_probs = F.log_softmax(logits, dim=-1)
+    if gamma != 0.0:
+        log_probs = th.pow(1 - th.exp(log_probs), gamma) * log_probs
     x_onehot = F.one_hot(x, logits.shape[-1])
     return th.sum(log_probs * x_onehot, dim=-1)
 

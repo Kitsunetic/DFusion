@@ -8,7 +8,6 @@ class D3PMSampler(nn.Module):
     """
     input:
     - betas:
-    - loss_type: (kl | hybrid | cross_entropy_x_start)
     - model_pred_type: (x_start | x_prev)
     - model_output_type: (logits | logistic_pars)
     """
@@ -17,24 +16,19 @@ class D3PMSampler(nn.Module):
         self,
         betas: np.ndarray,
         num_channels: int,
-        loss_type="kl",
         model_pred_type="x_start",
         model_output_type="logits",
         transition_mat_type="uniform",
         transition_bands=None,
-        hybrid_coeff=1.0,
     ):
-        assert loss_type in "kl | hybrid | cross_entropy_x_start".split(" | ")
         assert model_pred_type in "x_start | x_prev".split(" | ")
         assert model_output_type in "logits | logistic_pars".split(" | ")
         super().__init__()
 
         self.num_channels = num_channels
-        self.loss_type = loss_type
         self.model_pred_type = model_pred_type
         self.model_output_type = model_output_type
         self.transition_mat_type = transition_mat_type
-        self.hybrid_coeff = hybrid_coeff
         self.num_timesteps = len(betas)
 
         # noise schedule caches - betas
@@ -239,12 +233,10 @@ def __test__():
     diffusion_trainer = D3PMSampler(
         betas,
         num_channels=256,
-        loss_type="hybrid",
         model_pred_type="x_start",
         model_output_type="logits",
         transition_mat_type="uniform",
         transition_bands=None,
-        hybrid_coeff=1.0,
     )
     # model = lambda x, t: th.cat([x, x], dim=1)  # any model that doubles the channel (only when learnt model variance)
     model = lambda x, t: th.rand(2, 3, 32, 32, 256)
