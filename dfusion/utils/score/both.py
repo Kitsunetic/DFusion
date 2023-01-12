@@ -1,11 +1,11 @@
+import types
+
 import numpy as np
 import torch
-import types
 from tqdm import tqdm
 
-from .inception import InceptionV3
 from .fid import calculate_frechet_distance, torch_cov
-
+from .inception import InceptionV3
 
 device = torch.device("cuda:0")
 
@@ -37,7 +37,15 @@ def get_inception_and_fid_score(
         is_probs = np.empty((num_images, 1008))
 
     iterator = iter(
-        tqdm(images, total=num_images, dynamic_ncols=True, leave=False, disable=not verbose, desc="get_inception_and_fid_score")
+        tqdm(
+            images,
+            total=num_images,
+            dynamic_ncols=True,
+            leave=False,
+            disable=not verbose,
+            desc="get_inception_and_fid_score",
+            ncols=100,
+        )
     )
 
     start = 0
