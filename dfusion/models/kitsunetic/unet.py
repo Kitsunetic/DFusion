@@ -110,7 +110,7 @@ class UNet(nn.Module):
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
-            nn.SiLU(inplace=False),
+            nn.SiLU(),
             linear(time_embed_dim, time_embed_dim),
         )
 
@@ -118,26 +118,31 @@ class UNet(nn.Module):
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
 
+        # layers option
+        res_kwargs = dict(
+            emb_channels=time_embed_dim,
+            dropout=dropout,
+            num_groups=num_groups,
+            dims=dims,
+            use_checkpoint=use_checkpoint,
+            use_scale_shift_norm=use_scale_shift_norm,
+        )
+        attn_kwargs = dict(
+            use_checkpoint=use_checkpoint,
+            use_new_attention_order=use_new_attention_order,
+            num_groups=num_groups,
+        )
+
         # layers start:
         self.input_blocks = nn.ModuleList([TimestepEmbedSequential(conv_nd(dims, in_channels, model_channels, 3, padding=1))])
         self._feature_size = model_channels
         input_block_chans = [model_channels]
         ch = model_channels
         ds = 1
+
         for level, mult in enumerate(channel_mult):
             for _ in range(num_res_blocks):
-                layers = [
-                    ResBlock(
-                        ch,
-                        time_embed_dim,
-                        dropout,
-                        out_channels=mult * model_channels,
-                        num_groups=num_groups,
-                        dims=dims,
-                        use_checkpoint=use_checkpoint,
-                        use_scale_shift_norm=use_scale_shift_norm,
-                    )
-                ]
+                layers = [ResBlock(ch, out_channels=mult * model_channels, **res_kwargs)]
                 ch = mult * model_channels
                 if ds in attention_resolutions:
                     if num_head_channels == -1:
@@ -149,14 +154,7 @@ class UNet(nn.Module):
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        AttentionBlock(
-                            ch,
-                            use_checkpoint=use_checkpoint,
-                            num_heads=num_heads,
-                            num_head_channels=dim_head,
-                            use_new_attention_order=use_new_attention_order,
-                            num_groups=num_groups,
-                        )
+                        AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
                         if not use_spatial_transformer
                         else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim)
                     )
@@ -167,17 +165,7 @@ class UNet(nn.Module):
                 out_ch = ch
                 self.input_blocks.append(
                     TimestepEmbedSequential(
-                        ResBlock(
-                            ch,
-                            time_embed_dim,
-                            dropout,
-                            out_channels=out_ch,
-                            num_groups=num_groups,
-                            dims=dims,
-                            use_checkpoint=use_checkpoint,
-                            use_scale_shift_norm=use_scale_shift_norm,
-                            down=True,
-                        )
+                        ResBlock(ch, out_channels=out_ch, down=True, **res_kwargs)
                         if resblock_updown
                         else Downsample(ch, conv_resample, dims=dims, out_channels=out_ch)
                     )
@@ -196,34 +184,11 @@ class UNet(nn.Module):
             # num_heads = 1
             dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
         self.middle_block = TimestepEmbedSequential(
-            ResBlock(
-                ch,
-                time_embed_dim,
-                dropout,
-                num_groups=num_groups,
-                dims=dims,
-                use_checkpoint=use_checkpoint,
-                use_scale_shift_norm=use_scale_shift_norm,
-            ),
-            AttentionBlock(
-                ch,
-                use_checkpoint=use_checkpoint,
-                num_heads=num_heads,
-                num_head_channels=dim_head,
-                use_new_attention_order=use_new_attention_order,
-                num_groups=num_groups,
-            )
+            ResBlock(ch, **res_kwargs),
+            AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
             if not use_spatial_transformer
             else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim),
-            ResBlock(
-                ch,
-                time_embed_dim,
-                dropout,
-                num_groups=num_groups,
-                dims=dims,
-                use_checkpoint=use_checkpoint,
-                use_scale_shift_norm=use_scale_shift_norm,
-            ),
+            ResBlock(ch, **res_kwargs),
         )
         self._feature_size += ch
 
@@ -231,18 +196,7 @@ class UNet(nn.Module):
         for level, mult in list(enumerate(channel_mult))[::-1]:
             for i in range(num_res_blocks + 1):
                 ich = input_block_chans.pop()
-                layers = [
-                    ResBlock(
-                        ch + ich,
-                        time_embed_dim,
-                        dropout,
-                        out_channels=model_channels * mult,
-                        num_groups=num_groups,
-                        dims=dims,
-                        use_checkpoint=use_checkpoint,
-                        use_scale_shift_norm=use_scale_shift_norm,
-                    )
-                ]
+                layers = [ResBlock(ch + ich, out_channels=model_channels * mult, **res_kwargs)]
                 ch = model_channels * mult
                 if ds in attention_resolutions:
                     if num_head_channels == -1:
@@ -254,14 +208,7 @@ class UNet(nn.Module):
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        AttentionBlock(
-                            ch,
-                            use_checkpoint=use_checkpoint,
-                            num_heads=num_heads_upsample,
-                            num_head_channels=dim_head,
-                            use_new_attention_order=use_new_attention_order,
-                            num_groups=num_groups,
-                        )
+                        AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
                         if not use_spatial_transformer
                         else SpatialTransformer(
                             ch,
@@ -275,17 +222,7 @@ class UNet(nn.Module):
                 if level and i == num_res_blocks:
                     out_ch = ch
                     layers.append(
-                        ResBlock(
-                            ch,
-                            time_embed_dim,
-                            dropout,
-                            out_channels=out_ch,
-                            num_groups=num_groups,
-                            dims=dims,
-                            use_checkpoint=use_checkpoint,
-                            use_scale_shift_norm=use_scale_shift_norm,
-                            up=True,
-                        )
+                        ResBlock(ch, out_channels=out_ch, up=True, **res_kwargs)
                         if resblock_updown
                         else Upsample(ch, conv_resample, dims=dims, out_channels=out_ch)
                     )
@@ -295,7 +232,7 @@ class UNet(nn.Module):
 
         self.out = nn.Sequential(
             normalization(ch, num_groups),
-            nn.SiLU(inplace=False),
+            nn.SiLU(),
             zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
             # conv_nd(dims, model_channels, out_channels, 3, padding=1),
         )
