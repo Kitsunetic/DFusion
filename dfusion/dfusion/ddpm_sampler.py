@@ -40,11 +40,11 @@ class DDPMSampler(DiffusionBase):
 
         # noise schedule caches - vlb calculation
         posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_log_variance_clipped = np.log(np.append(posterior_variance[1], posterior_variance[1:]))
+        posterior_log_variance_clipped = np.log(np.concatenate([posterior_variance[1:2], posterior_variance[1:]]))
         posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
         posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
-        posterior_variance_large = np.append(posterior_variance[1], betas[1:])
-        posterior_log_variance_clipped_large = np.log(np.append(posterior_variance[1], betas[1:]))
+        posterior_variance_large = np.concatenate([posterior_variance[1:2], betas[1:]])
+        posterior_log_variance_clipped_large = np.log(posterior_variance_large)
 
         reg = lambda name, x: self.register_buffer(name, th.from_numpy(x.astype(np.float32)))
         reg("betas", betas)
@@ -67,7 +67,7 @@ class DDPMSampler(DiffusionBase):
     def p_sample(self, denoise_fn: Callable[[Tensor, Tensor], Tensor], x_t: Tensor, t: Tensor):
         out = self.p_mean_variance(denoise_fn, x_t, t, clip_denoised=self.clip_denoised)
         noise = th.randn_like(x_t)
-        nonzero_mask = unsqueeze_as(t != 0, x_t)
+        nonzero_mask = unsqueeze_as(t > 0, x_t)
         sample = out["model_mean"] + nonzero_mask * th.exp(0.5 * out["model_log_var"]) * noise
         return sample
 

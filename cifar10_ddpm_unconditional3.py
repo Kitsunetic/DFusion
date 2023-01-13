@@ -22,7 +22,9 @@ from torchvision.utils import make_grid, save_image
 from tqdm import tqdm
 
 from dfusion import DDIMSampler, DDPMSampler, DDPMTrainer, make_beta_schedule
+from dfusion.dfusion.diffusion2 import GaussianDiffusionSampler, GaussianDiffusionTrainer
 from dfusion.models.kitsunetic import UNet
+from dfusion.models.kitsunetic.unet2 import UNet as UNet2
 from dfusion.utils.common import infinite_dataloader
 from dfusion.utils.scheduler import WarmupScheduler
 from dfusion.utils.score.both import get_inception_and_fid_score
@@ -88,16 +90,18 @@ def train(args, model: nn.Module):
     sched = WarmupScheduler(optim, 625)
 
     betas = make_beta_schedule("linear", 1000)
-    trainer = DDPMTrainer(betas, loss_type="l2", model_mean_type="eps", model_var_type="fixed_large").cuda()
+    # trainer = DDPMTrainer(betas, loss_type="l2", model_mean_type="eps", model_var_type="fixed_large").cuda()
     # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
-    sampler = DDIMSampler(
-        betas,
-        ddim_s=50,
-        ddim_eta=0.0,
-        model_mean_type="eps",
-        model_var_type="fixed_large",
-        clip_denoised=True,
-    ).cuda()
+    # sampler = DDIMSampler(
+    #     betas,
+    #     ddim_s=50,
+    #     ddim_eta=0.0,
+    #     model_mean_type="eps",
+    #     model_var_type="fixed_large",
+    #     clip_denoised=True,
+    # ).cuda()
+    trainer = GaussianDiffusionTrainer(model, 1e-4, 2e-2, 1000).cuda()
+    sampler = GaussianDiffusionSampler(model, 1e-4, 2e-2, 1000).cuda()
 
     ds_train = CIFAR10("data/cifar10", train=True, transform=Compose([RandomHorizontalFlip(), ToTensor()]), download=True)
     dl_kwargs = dict(batch_size=256, num_workers=2, pin_memory=True, persistent_workers=True, drop_last=True)
@@ -110,8 +114,9 @@ def train(args, model: nn.Module):
             # label: Tensor = label.cuda(non_blocking=True)
 
             optim.zero_grad()
-            losses = trainer(model, im)
-            loss = losses["loss"].mean()
+            # losses = trainer(model, im)
+            # loss = losses["loss"].mean()
+            loss = trainer(im).mean()
             loss.backward()
             nn.utils.clip_grad.clip_grad_norm_(model.parameters(), 1.0)
             optim.step()
@@ -128,7 +133,8 @@ def train(args, model: nn.Module):
                     if args.ddp:
                         n = args.n_samples
                         m = math.ceil(n / dist.get_world_size())
-                        samples = sampler(model, (m, 3, 32, 32)) / 2 + 0.5  # [-1, 1] -> [0, 1]
+                        # samples = sampler(model, (m, 3, 32, 32)) / 2 + 0.5  # [-1, 1] -> [0, 1]
+                        samples = sampler((m, 3, 32, 32)) / 2 + 0.5
                         samples_lst = [th.empty_like(samples) for _ in range(args.world_size)]
                         dist.all_gather(samples_lst, samples)
                         samples = th.cat(samples_lst)[:n]
@@ -153,14 +159,16 @@ def eval(args, model: nn.Module):
     model.eval()
 
     betas = make_beta_schedule("linear", 1000)
-    sampler = DDIMSampler(
-        betas,
-        ddim_s=20,
-        ddim_eta=0.0,
-        model_mean_type="eps",
-        model_var_type="fixed_large",
-        clip_denoised=True,
-    ).cuda()
+    # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
+    # sampler = DDIMSampler(
+    #     betas,
+    #     ddim_s=50,
+    #     ddim_eta=0.0,
+    #     model_mean_type="eps",
+    #     model_var_type="fixed_large",
+    #     clip_denoised=True,
+    # ).cuda()
+    sampler = GaussianDiffusionSampler(model, 1e-4, 2e-2, 1000).cuda()
 
     # generate images
     n = args.n_samples_eval
@@ -171,8 +179,9 @@ def eval(args, model: nn.Module):
     with tqdm(total=n, ncols=100, disable=not args.rankzero) as pbar:
         for i in range(0, m, batch_size):
             b = min(m - i, batch_size)
-            x: Tensor = sampler(model, (b, 3, 32, 32))
-            x = x.add_(1).div_(2).clamp_(0, 1)  # [-1, 1] -> [0, 1]
+            # x: Tensor = sampler(model, (b, 3, 32, 32))
+            x: Tensor = sampler((b, 3, 32, 32))
+            x = x.div_(2).add_(0.5).clamp_(0, 1)  # [-1, 1] -> [0, 1]
 
             if args.ddp:
                 xs = [th.empty_like(x) for _ in range(args.world_size)]
@@ -222,19 +231,20 @@ def main_worker(rank: int, args: argparse.Namespace):
         args.sample_dir.mkdir(parents=True, exist_ok=True)
         args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    model = UNet(
-        dims=2,
-        in_channels=3,
-        model_channels=128,
-        out_channels=3,
-        num_res_blocks=2,
-        attention_resolutions=[2],
-        dropout=0.1,
-        channel_mult=[1, 2, 2, 2],
-        num_groups=32,
-        num_heads=8,
-        use_scale_shift_norm=False,
-    ).cuda()
+    # model = UNet(
+    #     dims=2,
+    #     in_channels=3,
+    #     model_channels=128,
+    #     out_channels=3,
+    #     num_res_blocks=2,
+    #     attention_resolutions=[2],
+    #     dropout=0.1,
+    #     channel_mult=[1, 2, 2, 2],
+    #     num_groups=32,
+    #     num_heads=8,
+    #     use_scale_shift_norm=False,
+    # ).cuda()
+    model = UNet2(1000, 128, [1, 2, 2, 2], [1], 2, 0.1).cuda()
     if args.ddp:
         model = DDP(model, device_ids=[args.gpu], find_unused_parameters=False)
 
