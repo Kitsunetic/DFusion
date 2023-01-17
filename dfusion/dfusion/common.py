@@ -6,9 +6,10 @@ from typing import Callable, Sequence, Union
 import numpy as np
 import torch as th
 import torch.distributed as dist
+import torch.nn as nn
 import torch.nn.functional as F
 from einops import reduce
-from torch import Size, Tensor, nn
+from torch import Size, Tensor
 
 
 def unsqueeze_as(x, y) -> th.Tensor:

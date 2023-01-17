@@ -19,79 +19,30 @@ class DDIMSampler(DiffusionBase):
         model_var_type="fixed_small",
         clip_denoised=False,
     ):
-        assert model_mean_type in "eps|x_start|x_prev".split("|")
-        assert model_var_type in "fixed_small|fixed_large|leraned|learned_range".split("|")
-        super().__init__()
+        super().__init__(betas, model_mean_type, model_var_type)
 
         self.ddim_eta = ddim_eta
-        self.model_mean_type = model_mean_type
-        self.model_var_type = model_var_type
         self.clip_denoised = clip_denoised
-        self.num_timesteps = len(betas)
         self.ddim_s = ddim_s
-
-        # noise schedule caches - betas
-        betas = betas.astype(np.float64)
-        betas_log = np.log(betas)
-        self.num_timesteps = len(betas)
-        alphas = 1.0 - betas
-        alphas_cumprod = np.cumprod(alphas)
-        alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
-        sqrt_alphas_cumprod = np.sqrt(alphas_cumprod)
-        sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
-        sqrt_recip_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod)
-        sqrt_recipm1_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod - 1)
-        sqrt_alphas_cumprod_prev = np.sqrt(np.append(1.0, alphas_cumprod))
-        alphas_cumprod_next = np.append(alphas_cumprod[1:], 0.0)
-        sqrt_one_minus_alphas_cumprod_next = np.sqrt(1 - alphas_cumprod_next)
-
-        # noise schedule caches - vlb calculation
-        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_log_variance_clipped = np.log(np.append(posterior_variance[1], posterior_variance[1:]))
-        posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
-        posterior_variance_large = np.append(posterior_variance[1], betas[1:])
-        posterior_log_variance_clipped_large = np.log(np.append(posterior_variance[1], betas[1:]))
 
         # DDIM parameter
         c = self.num_timesteps // self.ddim_s
         self.ddim_timesteps = ddim_timesteps = np.asarray(list(range(0, self.num_timesteps, c))) + 1
 
-        ## paramers that should be calculated in ddim timestep
-        ddim_alphas_cumprod = alphas_cumprod[ddim_timesteps]
-        ddim_alphas_cumprod_prev = np.asarray([ddim_alphas_cumprod[0]] + alphas_cumprod[ddim_timesteps[:-1]].tolist())
-        ddim_sqrt_alphas_cumprod_prev = np.sqrt(ddim_alphas_cumprod_prev)
-        ddim_sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - ddim_alphas_cumprod)
-        ddim_sigma = self.ddim_eta * np.sqrt(
-            (1 - ddim_alphas_cumprod_prev) / (1 - ddim_alphas_cumprod) * (1 - ddim_alphas_cumprod / ddim_alphas_cumprod_prev)
-        )
-        ddim_dir = np.sqrt(1 - ddim_alphas_cumprod_prev - ddim_sigma**2)
-
-        reg = lambda name, x: self.register_buffer(name, th.from_numpy(x.astype(np.float32)))
-        reg("betas", betas)
-        reg("betas_log", betas_log)
-        reg("alphas", alphas)
-        reg("alphas_cumprod", alphas_cumprod)
-        reg("alphas_cumprod_prev", alphas_cumprod_prev)
-        reg("sqrt_alphas_cumprod", sqrt_alphas_cumprod)
-        reg("sqrt_one_minus_alphas_cumprod", sqrt_one_minus_alphas_cumprod)
-        reg("sqrt_recip_alphas_cumprod", sqrt_recip_alphas_cumprod)
-        reg("sqrt_recipm1_alphas_cumprod", sqrt_recipm1_alphas_cumprod)
-        reg("sqrt_alphas_cumprod_prev", sqrt_alphas_cumprod_prev)
-        reg("alphas_cumprod_next", alphas_cumprod_next)
-        reg("sqrt_one_minus_alphas_cumprod_next", sqrt_one_minus_alphas_cumprod_next)
-        reg("posterior_variance", posterior_variance)
-        reg("posterior_log_variance_clipped", posterior_log_variance_clipped)
-        reg("posterior_mean_coef1", posterior_mean_coef1)
-        reg("posterior_mean_coef2", posterior_mean_coef2)
-        reg("posterior_variance_large", posterior_variance_large)
-        reg("posterior_log_variance_clipped_large", posterior_log_variance_clipped_large)
-        reg("ddim_alphas_cumprod", ddim_alphas_cumprod)
-        reg("ddim_alphas_cumprod_prev", ddim_alphas_cumprod_prev)
-        reg("ddim_sqrt_alphas_cumprod_prev", ddim_sqrt_alphas_cumprod_prev)
-        reg("ddim_sqrt_one_minus_alphas_cumprod", ddim_sqrt_one_minus_alphas_cumprod)
-        reg("ddim_sigma", ddim_sigma)
-        reg("ddim_dir", ddim_dir)
+        with self.register_diffusion_parameters():
+            # paramers that should be calculated in ddim timestep
+            self.ddim_alphas_cumprod = self.alphas_cumprod[ddim_timesteps]
+            self.ddim_alphas_cumprod_prev = np.asarray(
+                [self.ddim_alphas_cumprod[0]] + self.alphas_cumprod[ddim_timesteps[:-1]].tolist()
+            )
+            self.ddim_sqrt_alphas_cumprod_prev = np.sqrt(self.ddim_alphas_cumprod_prev)
+            self.ddim_sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - self.ddim_alphas_cumprod)
+            self.ddim_sigma = self.ddim_eta * np.sqrt(
+                (1 - self.ddim_alphas_cumprod_prev)
+                / (1 - self.ddim_alphas_cumprod)
+                * (1 - self.ddim_alphas_cumprod / self.ddim_alphas_cumprod_prev)
+            )
+            self.ddim_dir = np.sqrt(1 - self.ddim_alphas_cumprod_prev - self.ddim_sigma**2)
 
     def ddim_sample(self, denoise_fn, x_t, t, s):
         """

@@ -21,57 +21,14 @@ class DDPMTrainer(DiffusionBase):
         p2_loss_weight_gamma=0.0,
         p2_loss_weight_k=1.0,
     ):
+        super().__init__(betas, model_mean_type, model_var_type)
+
         assert loss_type in "l2|rescaled_l2|l1|rescaled_l1|kl|rescaled_kl".split("|")
-        assert model_mean_type in "eps|x_start|x_prev".split("|")
-        assert model_var_type in "fixed_small|fixed_large|leraned|learned_range".split("|")
-        super().__init__()
-
         self.loss_type = loss_type
-        self.model_mean_type = model_mean_type
-        self.model_var_type = model_var_type
-        self.num_timesteps = len(betas)
 
-        # noise schedule caches - betas
-        betas = betas.astype(np.float64)
-        betas_log = np.log(betas)
-        alphas = 1.0 - betas
-        alphas_cumprod = np.cumprod(alphas)
-        alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
-        sqrt_alphas_cumprod = np.sqrt(alphas_cumprod)
-        sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
-        sqrt_recip_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod)
-        sqrt_recipm1_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod - 1)
-        sqrt_alphas_cumprod_prev = np.sqrt(np.append(1.0, alphas_cumprod))
-
-        # noise schedule caches - vlb calculation
-        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_log_variance_clipped = np.log(np.append(posterior_variance[1], posterior_variance[1:]))
-        posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
-        posterior_variance_large = np.append(posterior_variance[1], betas[1:])
-        posterior_log_variance_clipped_large = np.log(np.append(posterior_variance[1], betas[1:]))
-
-        # p2 loss weight, from https://arxiv.org/abs/2204.00227
-        p2_loss_weight = (p2_loss_weight_k + alphas_cumprod / (1 - alphas_cumprod)) ** -p2_loss_weight_gamma
-
-        reg = lambda name, x: self.register_buffer(name, th.from_numpy(x.astype(np.float32)))
-        reg("betas", betas)
-        reg("betas_log", betas_log)
-        reg("alphas", alphas)
-        reg("alphas_cumprod", alphas_cumprod)
-        reg("alphas_cumprod_prev", alphas_cumprod_prev)
-        reg("sqrt_alphas_cumprod", sqrt_alphas_cumprod)
-        reg("sqrt_one_minus_alphas_cumprod", sqrt_one_minus_alphas_cumprod)
-        reg("sqrt_recip_alphas_cumprod", sqrt_recip_alphas_cumprod)
-        reg("sqrt_recipm1_alphas_cumprod", sqrt_recipm1_alphas_cumprod)
-        reg("sqrt_alphas_cumprod_prev", sqrt_alphas_cumprod_prev)
-        reg("posterior_variance", posterior_variance)
-        reg("posterior_log_variance_clipped", posterior_log_variance_clipped)
-        reg("posterior_mean_coef1", posterior_mean_coef1)
-        reg("posterior_mean_coef2", posterior_mean_coef2)
-        reg("posterior_variance_large", posterior_variance_large)
-        reg("posterior_log_variance_clipped_large", posterior_log_variance_clipped_large)
-        reg("p2_loss_weight", p2_loss_weight)
+        with self.register_diffusion_parameters():
+            # p2 loss weight, from https://arxiv.org/abs/2204.00227
+            self.p2_loss_weight = (p2_loss_weight_k + self.alphas_cumprod / (1 - self.alphas_cumprod)) ** -p2_loss_weight_gamma
 
     def loss_fn(self, pred: Tensor, target: Tensor) -> Tensor:
         return (
@@ -144,6 +101,7 @@ def __test__():
     model = lambda x, t: th.cat([x, x], dim=1)  # any model that doubles the channel (only when learnt model variance)
     data = th.rand(2, 3, 4, 5, 6, 7, 8, 9)  # arbitrary shape
     losses = diffusion_trainer(model, data)
+    print(losses)
     # {'vlb': tensor([5.2729e-06, 5.2618e-05]), 'eps': tensor([0.0007, 0.0084]), 'loss': tensor([0.0007, 0.0082])}
 
 

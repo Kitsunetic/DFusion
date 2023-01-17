@@ -16,53 +16,9 @@ class DDPMSampler(DiffusionBase):
         model_var_type="fixed_small",
         clip_denoised=False,
     ):
-        assert model_mean_type in "eps|x_start|x_prev".split("|")
-        assert model_var_type in "fixed_small|fixed_large|leraned|learned_range".split("|")
-        super().__init__()
+        super().__init__(betas, model_mean_type, model_var_type)
 
-        self.model_mean_type = model_mean_type
-        self.model_var_type = model_var_type
         self.clip_denoised = clip_denoised
-        self.num_timesteps = len(betas)
-
-        # noise schedule caches - betas
-        betas = betas.astype(np.float64)
-        betas_log = np.log(betas)
-        self.num_timesteps = len(betas)
-        alphas = 1.0 - betas
-        alphas_cumprod = np.cumprod(alphas)
-        alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
-        sqrt_alphas_cumprod = np.sqrt(alphas_cumprod)
-        sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
-        sqrt_recip_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod)
-        sqrt_recipm1_alphas_cumprod = np.sqrt(1.0 / alphas_cumprod - 1)
-        sqrt_alphas_cumprod_prev = np.sqrt(np.append(1.0, alphas_cumprod))
-
-        # noise schedule caches - vlb calculation
-        posterior_variance = betas * (1.0 - alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_log_variance_clipped = np.log(np.concatenate([posterior_variance[1:2], posterior_variance[1:]]))
-        posterior_mean_coef1 = betas * np.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
-        posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * np.sqrt(alphas) / (1.0 - alphas_cumprod)
-        posterior_variance_large = np.concatenate([posterior_variance[1:2], betas[1:]])
-        posterior_log_variance_clipped_large = np.log(posterior_variance_large)
-
-        reg = lambda name, x: self.register_buffer(name, th.from_numpy(x.astype(np.float32)))
-        reg("betas", betas)
-        reg("betas_log", betas_log)
-        reg("alphas", alphas)
-        reg("alphas_cumprod", alphas_cumprod)
-        reg("alphas_cumprod_prev", alphas_cumprod_prev)
-        reg("sqrt_alphas_cumprod", sqrt_alphas_cumprod)
-        reg("sqrt_one_minus_alphas_cumprod", sqrt_one_minus_alphas_cumprod)
-        reg("sqrt_recip_alphas_cumprod", sqrt_recip_alphas_cumprod)
-        reg("sqrt_recipm1_alphas_cumprod", sqrt_recipm1_alphas_cumprod)
-        reg("sqrt_alphas_cumprod_prev", sqrt_alphas_cumprod_prev)
-        reg("posterior_variance", posterior_variance)
-        reg("posterior_log_variance_clipped", posterior_log_variance_clipped)
-        reg("posterior_mean_coef1", posterior_mean_coef1)
-        reg("posterior_mean_coef2", posterior_mean_coef2)
-        reg("posterior_variance_large", posterior_variance_large)
-        reg("posterior_log_variance_clipped_large", posterior_log_variance_clipped_large)
 
     def p_sample(self, denoise_fn: Callable[[Tensor, Tensor], Tensor], x_t: Tensor, t: Tensor):
         out = self.p_mean_variance(denoise_fn, x_t, t, clip_denoised=self.clip_denoised)
