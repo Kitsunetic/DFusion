@@ -1,3 +1,7 @@
+"""
+from https://github.com/w86763777/pytorch-ddpm/blob/master/diffusion.py
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
