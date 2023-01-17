@@ -37,6 +37,7 @@ def get_args():
     parser.add_argument("--eval", action="store_true")
     parser.add_argument("--ema", action="store_true")
     parser.add_argument("--gpus", type=str, required=True)
+    parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--n_samples", type=int, default=256)
     parser.add_argument("--n_samples_eval", type=int, default=50000)
     parser.add_argument("--n_steps", type=int, default=400000)
@@ -89,7 +90,7 @@ def find_free_port():
     return port
 
 
-def train(args, model: nn.Module):
+def train(args, model: nn.Module, model_ema: nn.Module):
     optim = Adam(model.parameters(), lr=args.lr, weight_decay=0.0)
     sched = WarmupScheduler(optim, args.warmup)
 
@@ -110,7 +111,7 @@ def train(args, model: nn.Module):
     if args.rankzero:
         ds_train = CIFAR10("data/cifar10", train=True, download=True)
     ds_train = CIFAR10("data/cifar10", train=True, transform=Compose([RandomHorizontalFlip(), ToTensor()]))
-    dl_kwargs = dict(batch_size=256, num_workers=2, pin_memory=True, persistent_workers=True, drop_last=True)
+    dl_kwargs = dict(batch_size=args.batch_size, num_workers=2, pin_memory=True, persistent_workers=True, drop_last=True)
     dl_train = infinite_dataloader(DataLoader(ds_train, shuffle=True, **dl_kwargs), n_steps=args.n_steps)
 
     o = AverageMeter()
@@ -127,6 +128,8 @@ def train(args, model: nn.Module):
             nn.utils.clip_grad.clip_grad_norm_(model.parameters(), 1.0)
             optim.step()
             sched.step()
+
+            ema(model, model_ema, 0.9999)
 
             o.update(loss.item(), n=im.size(0))
             pbar.set_postfix_str(f"loss: {o():.4f}", refresh=False)
@@ -151,10 +154,11 @@ def train(args, model: nn.Module):
                         save_image(samples, args.sample_dir / f"{step:06d}.png", nrow=int(math.sqrt(args.n_samples)))
 
                         # save checkpoint
-                        if args.ddp:
-                            th.save(model.module.state_dict(), "best.pth")
-                        else:
-                            th.save(model.state_dict(), "best.pth")
+                        state_dict = {
+                            "model": model.module.state_dict() if args.ddp else model.state_dict(),
+                            "model_ema": model_ema.state_dict(),
+                        }
+                        th.save(state_dict, "best.pth")
 
                 model.train()
 
@@ -163,21 +167,30 @@ def train(args, model: nn.Module):
 
 
 @th.no_grad()
-def eval(args, model: nn.Module):
+def eval(args, model: nn.Module, model_ema: nn.Module):
     ckpt = th.load(args.result_dir / "best.pth", map_location="cpu")
     if args.ddp:
-        model.module.load_state_dict(ckpt)
+        model.module.load_state_dict(ckpt["model"])
     else:
-        model.load_state_dict(ckpt)
+        model.load_state_dict(ckpt["model"])
+    model_ema.load_state_dict(ckpt["model_ema"])
 
     # ckpt = th.load("results/DDPM_CIFAR10_EPS/ckpt.pt", map_location="cpu")
     # model.module.load_state_dict(ckpt["net_model"])
+
+    model.eval()
+    model_ema.eval()
+
+    if args.ema:
+        model = model_ema
+    else:
+        model = model.module
 
     betas = make_beta_schedule("linear", 1000)
     # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
     sampler = DDIMSampler(
         betas,
-        ddim_s=20,
+        ddim_s=50,
         ddim_eta=0.0,
         model_mean_type="eps",
         model_var_type="fixed_large",
@@ -188,7 +201,7 @@ def eval(args, model: nn.Module):
     # generate images
     n = args.n_samples_eval
     m = math.ceil(n / args.world_size)
-    batch_size = 256
+    batch_size = args.batch_size
 
     ims = []
     with tqdm(total=n, ncols=100, disable=not args.rankzero) as pbar:
@@ -260,13 +273,16 @@ def main_worker(rank: int, args: argparse.Namespace):
     #     use_scale_shift_norm=False,
     # ).cuda()
     model = UNet2(1000, 128, [1, 2, 2, 2], [1], 2, 0.1).cuda()
+    model_ema: nn.Module = deepcopy(model)
     if args.ddp:
         model = DDP(model, device_ids=[args.gpu], find_unused_parameters=False)
+    model_ema.load_state_dict(model.state_dict())
+    model_ema.eval().requires_grad_(False)
 
     if not args.eval:
-        train(args, model)
+        train(args, model, model_ema)
     else:
-        eval(args, model)
+        eval(args, model, model_ema)
 
 
 def main():
