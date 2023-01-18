@@ -19,10 +19,9 @@ class DDIMSampler(DiffusionBase):
         model_var_type="fixed_small",
         clip_denoised=False,
     ):
-        super().__init__(betas, model_mean_type, model_var_type)
+        super().__init__(betas, model_mean_type, model_var_type, clip_denoised)
 
         self.ddim_eta = ddim_eta
-        self.clip_denoised = clip_denoised
         self.ddim_s = ddim_s
 
         # DDIM parameter
@@ -50,7 +49,7 @@ class DDIMSampler(DiffusionBase):
 
         Same usage as p_sample().
         """
-        out = self.p_mean_variance(denoise_fn, x_t, t, clip_denoised=self.clip_denoised)
+        out = self.p_mean_variance(denoise_fn, x_t, t)
         eps = default(out.get("pred_eps", None), lambda: self._predict_eps_from_xstart(x_t, t, out["pred_x_start"]))
 
         # ddim_alphas_cumprod = unsqueeze_as(self.ddim_alphas_cumprod[s], x_t)
@@ -78,7 +77,7 @@ class DDIMSampler(DiffusionBase):
         sqrt_one_minus_alphas_cumprod_next = unsqueeze_as(self.sqrt_one_minus_alphas_cumprod_next[t], x_t)
         sqrt_alphas_cumprod_prev = unsqueeze_as(self.sqrt_alphas_cumprod_prev[t], x_t)
 
-        out = self.p_mean_variance(denoise_fn, x_t, t, clip_denoised=self.clip_denoised)
+        out = self.p_mean_variance(denoise_fn, x_t, t)
         if self.model_mean_type == "x_prev":
             out["pred_x_start"] = self._predict_xstart_from_xprev(x_t, t, out["model_mean"])
         eps = (sqrt_recip_alphas_cumprod * x_t - out["pred_x_start"]) / sqrt_recipm1_alphas_cumprod

@@ -34,6 +34,7 @@ class DiffusionBase(PostInitModule):
         betas: np.ndarray,
         model_mean_type="eps",
         model_var_type="fixed_small",
+        clip_denoised=False,
     ) -> None:
         assert model_mean_type in "eps|x_start|x_prev".split("|")
         assert model_var_type in "fixed_small|fixed_large|leraned|learned_range".split("|")
@@ -42,6 +43,7 @@ class DiffusionBase(PostInitModule):
         self.num_timesteps = len(betas)
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
+        self.clip_denoised = clip_denoised
 
         self._param_names = set()
 
@@ -134,7 +136,7 @@ class DiffusionBase(PostInitModule):
         posterior_log_variance_clipped = unsqueeze_as(self.posterior_log_variance_clipped[t], x_t)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def p_mean_variance(self, denoise_fn: Callable, x_t: Tensor, t: Tensor, clip_denoised=False):
+    def p_mean_variance(self, denoise_fn: Callable, x_t: Tensor, t: Tensor):
         model_out: Tensor = denoise_fn(x_t, t)
         out_dict = {"model_out": model_out}
 
@@ -162,7 +164,7 @@ class DiffusionBase(PostInitModule):
         # out_dict["model_var"] = model_var
         out_dict["model_log_var"] = model_log_var
 
-        clip = (lambda x: x.clamp_(-1.0, 1.0)) if clip_denoised else (lambda x: x)
+        clip = (lambda x: x.clamp_(-1.0, 1.0)) if self.clip_denoised else (lambda x: x)
 
         # get mean
         if self.model_mean_type == "x_prev":

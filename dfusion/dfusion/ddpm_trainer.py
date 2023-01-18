@@ -20,8 +20,9 @@ class DDPMTrainer(DiffusionBase):
         model_var_type="fixed_small",
         p2_loss_weight_gamma=0.0,
         p2_loss_weight_k=1.0,
+        clip_denoised=False,
     ):
-        super().__init__(betas, model_mean_type, model_var_type)
+        super().__init__(betas, model_mean_type, model_var_type, clip_denoised)
 
         assert loss_type in "l2|rescaled_l2|l1|rescaled_l1|kl|rescaled_kl".split("|")
         self.loss_type = loss_type
@@ -44,7 +45,7 @@ class DDPMTrainer(DiffusionBase):
 
     def get_vlb(self, denoise_fn, x_start, x_t, t):
         true_mean, _, true_log_var = self.q_posterior_mean_variance(x_start, x_t, t)
-        out = self.p_mean_variance(denoise_fn, x_t, t, clip_denoised=False)
+        out = self.p_mean_variance(denoise_fn, x_t, t)
         model_mean, model_log_var = out["model_mean"], out["model_log_var"]
         kl = normal_kl(true_mean, true_log_var, model_mean, model_log_var)
         kl = kl.flatten(1).mean(1)

@@ -16,12 +16,10 @@ class DDPMSampler(DiffusionBase):
         model_var_type="fixed_small",
         clip_denoised=False,
     ):
-        super().__init__(betas, model_mean_type, model_var_type)
-
-        self.clip_denoised = clip_denoised
+        super().__init__(betas, model_mean_type, model_var_type, clip_denoised)
 
     def p_sample(self, denoise_fn: Callable[[Tensor, Tensor], Tensor], x_t: Tensor, t: Tensor):
-        out = self.p_mean_variance(denoise_fn, x_t, t, clip_denoised=self.clip_denoised)
+        out = self.p_mean_variance(denoise_fn, x_t, t)
         noise = th.randn_like(x_t)
         nonzero_mask = unsqueeze_as(t > 0, x_t)
         sample = out["model_mean"] + nonzero_mask * th.exp(0.5 * out["model_log_var"]) * noise
