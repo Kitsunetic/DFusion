@@ -129,7 +129,10 @@ def train(args, model: nn.Module, model_ema: nn.Module):
             optim.step()
             sched.step()
 
-            ema(model, model_ema, 0.9999)
+            if args.ddp:
+                ema(model.module, model_ema, 0.9999)
+            else:
+                ema(model, model_ema, 0.9999)
 
             o.update(loss.item(), n=im.size(0))
             pbar.set_postfix_str(f"loss: {o():.4f}", refresh=False)
@@ -142,7 +145,7 @@ def train(args, model: nn.Module, model_ema: nn.Module):
                     if args.ddp:
                         n = args.n_samples
                         m = math.ceil(n / dist.get_world_size())
-                        samples = sampler(model, (m, 3, 32, 32)) / 2 + 0.5  # [-1, 1] -> [0, 1]
+                        samples = sampler(model.module, (m, 3, 32, 32)) / 2 + 0.5  # [-1, 1] -> [0, 1]
                         # samples = sampler((m, 3, 32, 32)) / 2 + 0.5
                         samples_lst = [th.empty_like(samples) for _ in range(args.world_size)]
                         dist.all_gather(samples_lst, samples)
@@ -158,7 +161,7 @@ def train(args, model: nn.Module, model_ema: nn.Module):
                             "model": model.module.state_dict() if args.ddp else model.state_dict(),
                             "model_ema": model_ema.state_dict(),
                         }
-                        th.save(state_dict, "best.pth")
+                        th.save(state_dict, args.result_dir / "best.pth")
 
                 model.train()
 
@@ -187,15 +190,15 @@ def eval(args, model: nn.Module, model_ema: nn.Module):
         model = model.module
 
     betas = make_beta_schedule("linear", 1000)
-    # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
-    sampler = DDIMSampler(
-        betas,
-        ddim_s=50,
-        ddim_eta=0.0,
-        model_mean_type="eps",
-        model_var_type="fixed_large",
-        clip_denoised=True,
-    ).cuda()
+    sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
+    # sampler = DDIMSampler(
+    #     betas,
+    #     ddim_s=20,
+    #     ddim_eta=0.0,
+    #     model_mean_type="eps",
+    #     model_var_type="fixed_large",
+    #     clip_denoised=True,
+    # ).cuda()
     # sampler = GaussianDiffusionSampler(model, 1e-4, 2e-2, 1000).cuda()
 
     # generate images
@@ -276,7 +279,9 @@ def main_worker(rank: int, args: argparse.Namespace):
     model_ema: nn.Module = deepcopy(model)
     if args.ddp:
         model = DDP(model, device_ids=[args.gpu], find_unused_parameters=False)
-    model_ema.load_state_dict(model.state_dict())
+        model_ema.load_state_dict(model.module.state_dict())
+    else:
+        model_ema.load_state_dict(model.state_dict())
     model_ema.eval().requires_grad_(False)
 
     if not args.eval:
