@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 from dfusion import DDIMSampler, DDPMSampler, DDPMTrainer, make_beta_schedule
 from dfusion.dfusion.diffusion2 import GaussianDiffusionSampler, GaussianDiffusionTrainer
+from dfusion.dfusion.karras_sampler import KarrasSampler
 from dfusion.models.kitsunetic import UNet
 from dfusion.models.kitsunetic.unet2 import UNet as UNet2
 from dfusion.utils.common import infinite_dataloader
@@ -187,10 +188,16 @@ def eval(args, model: nn.Module, model_ema: nn.Module):
     if args.ema:
         model = model_ema
     else:
-        model = model.module
+        if args.ddp:
+            model = model.module
+        else:
+            model = model
 
     betas = make_beta_schedule("linear", 1000)
-    sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
+    # sampler = KarrasSampler(betas, n_steps=100, sampler="heun", clip_denoised=True).cuda()
+    sampler = KarrasSampler(betas, n_steps=20, sampler="dpm", clip_denoised=True).cuda()
+    # sampler = KarrasSampler(betas, n_steps=20, sampler="ancestral").cuda()
+    # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
     # sampler = DDIMSampler(
     #     betas,
     #     ddim_s=20,
