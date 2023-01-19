@@ -14,7 +14,7 @@ class DDPMSampler(DiffusionBase):
         betas: np.ndarray,
         model_mean_type="eps",
         model_var_type="fixed_small",
-        clip_denoised=False,
+        clip_denoised=True,
     ):
         super().__init__(betas, model_mean_type, model_var_type, clip_denoised)
 

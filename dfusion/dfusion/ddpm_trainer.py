@@ -20,7 +20,7 @@ class DDPMTrainer(DiffusionBase):
         model_var_type="fixed_small",
         p2_loss_weight_gamma=0.0,
         p2_loss_weight_k=1.0,
-        clip_denoised=False,
+        clip_denoised=True,
     ):
         super().__init__(betas, model_mean_type, model_var_type, clip_denoised)
 

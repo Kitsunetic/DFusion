@@ -34,7 +34,7 @@ class DiffusionBase(PostInitModule):
         betas: np.ndarray,
         model_mean_type="eps",
         model_var_type="fixed_small",
-        clip_denoised=False,
+        clip_denoised=True,
     ) -> None:
         assert model_mean_type in "eps|x_start|x_prev".split("|")
         assert model_var_type in "fixed_small|fixed_large|leraned|learned_range".split("|")
