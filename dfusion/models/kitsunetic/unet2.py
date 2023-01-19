@@ -1,6 +1,7 @@
 import math
 
 import torch
+from dfusion.dfusion.common import unsqueeze_as
 from torch import nn
 from torch.nn import functional as F
 from torch.nn import init
@@ -150,7 +151,7 @@ class ResBlock(nn.Module):
 
     def forward(self, x, temb):
         h = self.block1(x)
-        h += self.temb_proj(temb)[:, :, None, None]
+        h = h + unsqueeze_as(self.temb_proj(temb), x)
         h = self.block2(h)
 
         h = h + self.shortcut(x)
@@ -236,3 +237,4 @@ if __name__ == "__main__":
     x = torch.randn(batch_size, 3, 32, 32)
     t = torch.randint(1000, (batch_size,))
     y = model(x, t)
+    print(y.shape)
