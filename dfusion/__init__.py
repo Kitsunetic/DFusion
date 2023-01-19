@@ -4,3 +4,4 @@ from .dfusion.d3pm_trainer import D3PMTrainer
 from .dfusion.ddim_sampler import DDIMSampler
 from .dfusion.ddpm_sampler import DDPMSampler
 from .dfusion.ddpm_trainer import DDPMTrainer
+from .dfusion.karras_sampler import KarrasSampler
