@@ -45,6 +45,7 @@ def get_args():
     parser.add_argument("--samples_per_steps", type=int, default=10000)
     parser.add_argument("--lr", type=float, default=0.0002)
     parser.add_argument("--warmup", type=int, default=5000)
+    parser.add_argument("--n_sample_steps", type=int, default=20)
     args = parser.parse_args()
     return args
 
@@ -194,9 +195,9 @@ def eval(args, model: nn.Module, model_ema: nn.Module):
             model = model
 
     betas = make_beta_schedule("linear", 1000)
-    # sampler = KarrasSampler(betas, n_steps=100, sampler="heun", clip_denoised=True).cuda()
-    sampler = KarrasSampler(betas, n_steps=20, sampler="dpm", clip_denoised=True).cuda()
-    # sampler = KarrasSampler(betas, n_steps=20, sampler="ancestral").cuda()
+    sampler = KarrasSampler(betas, n_steps=args.n_sample_steps, sampler="heun", clip_denoised=True).cuda()
+    # sampler = KarrasSampler(betas, n_steps=args.n_sample_steps, sampler="dpm", clip_denoised=True).cuda()
+    # sampler = KarrasSampler(betas, n_steps=args.n_sample_steps, sampler="ancestral").cuda()
     # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
     # sampler = DDIMSampler(
     #     betas,
