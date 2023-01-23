@@ -1,11 +1,10 @@
 import numpy as np
 import torch
 from scipy import linalg
-from tqdm import tqdm
 from torch.nn.functional import adaptive_avg_pool2d
+from tqdm import tqdm
 
 from .inception import InceptionV3
-
 
 DIM = 2048
 device = torch.device("cuda:0")
@@ -152,7 +151,15 @@ def get_statistics(images, num_images=None, batch_size=50, use_torch=False, verb
         fid_acts = np.empty((num_images, 2048))
 
     iterator = iter(
-        tqdm(images, total=num_images, dynamic_ncols=True, leave=False, disable=not verbose, desc="get_inception_and_fid_score")
+        tqdm(
+            images,
+            total=num_images,
+            ncols=100,
+            dynamic_ncols=True,
+            leave=False,
+            disable=not verbose,
+            desc="get_inception_and_fid_score",
+        )
     )
 
     start = 0

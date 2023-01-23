@@ -9,3 +9,14 @@ class WarmupScheduler(LambdaLR):
 
     def warmup_lr(self, step):
         return min(step, self.warmup) / self.warmup
+
+
+def LinearWarmup(optimizer, warmup_steps: int, total_steps: int, f_min: float):
+    def fn(ep):
+        if ep < warmup_steps:
+            u = f_min + (1 - f_min) * ep / warmup_steps
+        else:
+            u = f_min + (1 - f_min) * (1 - ep / total_steps)
+        return min(1, max(f_min, u))
+
+    return LambdaLR(optimizer, lr_lambda=fn)

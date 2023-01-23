@@ -28,7 +28,7 @@ from dfusion.models.kitsunetic import UNet
 from dfusion.models.kitsunetic.unet2 import UNet as UNet2
 from dfusion.utils.common import infinite_dataloader
 from dfusion.utils.ema import ema
-from dfusion.utils.scheduler import WarmupScheduler
+from dfusion.utils.scheduler import LinearWarmup, WarmupScheduler
 from dfusion.utils.score.both import get_inception_and_fid_score
 
 
@@ -94,7 +94,8 @@ def find_free_port():
 
 def train(args, model: nn.Module, model_ema: nn.Module):
     optim = Adam(model.parameters(), lr=args.lr, weight_decay=0.0)
-    sched = WarmupScheduler(optim, args.warmup)
+    # sched = WarmupScheduler(optim, args.warmup)
+    sched = LinearWarmup(optim, args.warmup, args.n_steps, 0.05)
 
     betas = make_beta_schedule("linear", 1000)
     trainer = DDPMTrainer(betas, loss_type="l2", model_mean_type="eps", model_var_type="fixed_large").cuda()
@@ -117,7 +118,7 @@ def train(args, model: nn.Module, model_ema: nn.Module):
     dl_train = infinite_dataloader(DataLoader(ds_train, shuffle=True, **dl_kwargs), n_steps=args.n_steps)
 
     o = AverageMeter()
-    with tqdm(total=args.n_steps, ncols=100, disable=not args.rankzero) as pbar:
+    with tqdm(total=args.n_steps, ncols=100, disable=not args.rankzero, desc="Train") as pbar:
         for step, (im, label) in enumerate(dl_train, 1):
             im: Tensor = im.cuda(non_blocking=True) * 2 - 1  # [0, 1] -> [-1, 1]
             # label: Tensor = label.cuda(non_blocking=True)
@@ -165,6 +166,15 @@ def train(args, model: nn.Module, model_ema: nn.Module):
                         }
                         th.save(state_dict, args.result_dir / "best.pth")
 
+                if args.rankzero:
+                    print("---- eval model ----")
+                args.ema = False
+                eval(args, model, model_ema)
+                if args.rankzero:
+                    print("---- eval model_ema ----")
+                args.ema = True
+                eval(args, model, model_ema)
+
                 model.train()
 
     if args.ddp:
@@ -173,16 +183,6 @@ def train(args, model: nn.Module, model_ema: nn.Module):
 
 @th.no_grad()
 def eval(args, model: nn.Module, model_ema: nn.Module):
-    ckpt = th.load(args.result_dir / "best.pth", map_location="cpu")
-    if args.ddp:
-        model.module.load_state_dict(ckpt["model"])
-    else:
-        model.load_state_dict(ckpt["model"])
-    model_ema.load_state_dict(ckpt["model_ema"])
-
-    # ckpt = th.load("results/DDPM_CIFAR10_EPS/ckpt.pt", map_location="cpu")
-    # model.module.load_state_dict(ckpt["net_model"])
-
     model.eval()
     model_ema.eval()
 
@@ -215,7 +215,7 @@ def eval(args, model: nn.Module, model_ema: nn.Module):
     batch_size = args.batch_size
 
     ims = []
-    with tqdm(total=n, ncols=100, disable=not args.rankzero) as pbar:
+    with tqdm(total=n, ncols=100, disable=not args.rankzero, desc="Eval") as pbar:
         for i in range(0, m, batch_size):
             b = min(m - i, batch_size)
             x: Tensor = sampler(model, (b, 3, 32, 32))
@@ -295,6 +295,13 @@ def main_worker(rank: int, args: argparse.Namespace):
     if not args.eval:
         train(args, model, model_ema)
     else:
+        ckpt = th.load(args.result_dir / "best.pth", map_location="cpu")
+        if args.ddp:
+            model.module.load_state_dict(ckpt["model"])
+        else:
+            model.load_state_dict(ckpt["model"])
+        model_ema.load_state_dict(ckpt["model_ema"])
+
         eval(args, model, model_ema)
 
 
