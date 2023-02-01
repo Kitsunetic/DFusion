@@ -46,6 +46,7 @@ def get_args():
     parser.add_argument("--lr", type=float, default=0.0002)
     parser.add_argument("--warmup", type=int, default=5000)
     parser.add_argument("--n_sample_steps", type=int, default=20)
+    parser.add_argument("--model_var_type", default="fixed_large")
     args = parser.parse_args()
     return args
 
@@ -92,22 +93,43 @@ def find_free_port():
     return port
 
 
+def calc_score(ims: Tensor):
+    """
+    ### input:
+    - ims: b 3 h w, cpu
+    """
+    (IS, IS_std), FID = get_inception_and_fid_score(
+        ims,
+        fid_cache="results/stats/cifar10.train.npz",
+        use_torch=False,
+        verbose=True,
+    )
+    return IS, IS_std, FID
+
+
 def train(args, model: nn.Module, model_ema: nn.Module):
     optim = Adam(model.parameters(), lr=args.lr, weight_decay=0.0)
     # sched = WarmupScheduler(optim, args.warmup)
     sched = LinearWarmup(optim, args.warmup, args.n_steps, 0.05)
 
     betas = make_beta_schedule("linear", 1000)
-    trainer = DDPMTrainer(betas, loss_type="l2", model_mean_type="eps", model_var_type="fixed_large").cuda()
-    # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
-    sampler = DDIMSampler(
+    trainer = DDPMTrainer(betas, loss_type="l2", model_mean_type="eps", model_var_type=args.model_var_type).cuda()
+    sampler = KarrasSampler(
         betas,
-        ddim_s=20,
-        ddim_eta=0.0,
-        model_mean_type="eps",
-        model_var_type="fixed_large",
+        n_steps=args.n_sample_steps,
+        sampler="heun",
         clip_denoised=True,
+        model_var_type=args.model_var_type,
     ).cuda()
+    # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type=args.model_var_type, clip_denoised=True).cuda()
+    # sampler = DDIMSampler(
+    #     betas,
+    #     ddim_s=20,
+    #     ddim_eta=0.0,
+    #     model_mean_type="eps",
+    #     model_var_type=args.model_var_type,
+    #     clip_denoised=True,
+    # ).cuda()
     # trainer = GaussianDiffusionTrainer(model, 1e-4, 2e-2, 1000).cuda()
     # sampler = GaussianDiffusionSampler(model, 1e-4, 2e-2, 1000).cuda()
 
@@ -195,16 +217,22 @@ def eval(args, model: nn.Module, model_ema: nn.Module):
             model = model
 
     betas = make_beta_schedule("linear", 1000)
-    sampler = KarrasSampler(betas, n_steps=args.n_sample_steps, sampler="heun", clip_denoised=True).cuda()
+    sampler = KarrasSampler(
+        betas,
+        n_steps=args.n_sample_steps,
+        sampler="heun",
+        clip_denoised=True,
+        model_var_type=args.model_var_type,
+    ).cuda()
     # sampler = KarrasSampler(betas, n_steps=args.n_sample_steps, sampler="dpm", clip_denoised=True).cuda()
     # sampler = KarrasSampler(betas, n_steps=args.n_sample_steps, sampler="ancestral").cuda()
-    # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type="fixed_large", clip_denoised=True).cuda()
+    # sampler = DDPMSampler(betas, model_mean_type="eps", model_var_type=args.model_var_type, clip_denoised=True).cuda()
     # sampler = DDIMSampler(
     #     betas,
     #     ddim_s=20,
     #     ddim_eta=0.0,
     #     model_mean_type="eps",
-    #     model_var_type="fixed_large",
+    #     model_var_type=args.model_var_type,
     #     clip_denoised=True,
     # ).cuda()
     # sampler = GaussianDiffusionSampler(model, 1e-4, 2e-2, 1000).cuda()
@@ -234,15 +262,8 @@ def eval(args, model: nn.Module, model_ema: nn.Module):
     # calculate FID
     if args.rankzero:
         ims = th.cat(ims)
-        (IS, IS_std), FID = get_inception_and_fid_score(
-            ims,
-            fid_cache="results/stats/cifar10.train.npz",
-            use_torch=False,
-            verbose=True,
-        )
-        print("IS:", IS)
-        print("IS_std:", IS_std)
-        print("FID:", FID)
+        IS, IS_std, FID = calc_score(ims)
+        print(f"IS: {IS:.4f}, IS_std: {IS_std:.4f}, FID: {FID:.4f}")
 
     if args.ddp:
         dist.barrier()
