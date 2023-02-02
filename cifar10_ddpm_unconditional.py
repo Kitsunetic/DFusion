@@ -188,12 +188,10 @@ def train(args, model: nn.Module, model_ema: nn.Module):
                         }
                         th.save(state_dict, args.result_dir / "best.pth")
 
-                if args.rankzero:
-                    print("---- eval model ----")
+                pbar.clear()
+
                 args.ema = False
                 eval(args, model, model_ema)
-                if args.rankzero:
-                    print("---- eval model_ema ----")
                 args.ema = True
                 eval(args, model, model_ema)
 
@@ -291,20 +289,22 @@ def main_worker(rank: int, args: argparse.Namespace):
         args.sample_dir.mkdir(parents=True, exist_ok=True)
         args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # model = UNet(
-    #     dims=2,
-    #     in_channels=3,
-    #     model_channels=128,
-    #     out_channels=3,
-    #     num_res_blocks=2,
-    #     attention_resolutions=[2],
-    #     dropout=0.1,
-    #     channel_mult=[1, 2, 2, 2],
-    #     num_groups=32,
-    #     num_heads=8,
-    #     use_scale_shift_norm=False,
-    # ).cuda()
-    model = UNet2(1000, 128, [1, 2, 2, 2], [1], 2, 0.1).cuda()
+    out_channels = 6 if args.model_var_type.startswith("learned") else 3
+
+    model = UNet(
+        dims=2,
+        in_channels=3,
+        model_channels=128,
+        out_channels=out_channels,
+        num_res_blocks=2,
+        attention_resolutions=[2],
+        dropout=0.1,
+        channel_mult=[1, 2, 2, 2],
+        num_groups=32,
+        num_heads=8,
+        use_scale_shift_norm=False,
+    ).cuda()
+    # model = UNet2(1000, 128, [1, 2, 2, 2], [1], 2, 0.1).cuda()
     model_ema: nn.Module = deepcopy(model)
     if args.ddp:
         model = DDP(model, device_ids=[args.gpu], find_unused_parameters=False)
