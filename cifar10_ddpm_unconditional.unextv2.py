@@ -22,11 +22,11 @@ from torchvision.utils import make_grid, save_image
 from tqdm import tqdm
 
 from dfusion import DDIMSampler, DDPMSampler, DDPMTrainer, make_beta_schedule
-from dfusion.dfusion.diffusion2 import (GaussianDiffusionSampler,
-                                        GaussianDiffusionTrainer)
+from dfusion.dfusion.diffusion2 import GaussianDiffusionSampler, GaussianDiffusionTrainer
 from dfusion.dfusion.karras_sampler import KarrasSampler
 from dfusion.models.kitsunetic import UNet
 from dfusion.models.kitsunetic.unet2 import UNet as UNet2
+from dfusion.models.kitsunetic.unext import unextv2_atto, unextv2_femto, unextv2_nano, unextv2_pico
 from dfusion.utils.common import infinite_dataloader
 from dfusion.utils.ema import ema
 from dfusion.utils.scheduler import LinearWarmup, WarmupScheduler
@@ -301,19 +301,23 @@ def main_worker(rank: int, args: argparse.Namespace):
 
     out_channels = 6 if args.model_var_type.startswith("learned") else 3
 
-    model = UNet(
-        dims=2,
-        in_channels=3,
-        model_channels=128,
-        out_channels=out_channels,
-        num_res_blocks=2,
-        attention_resolutions=[2],
-        dropout=0.1,
-        channel_mult=[1, 2, 2, 2],
-        num_groups=32,
-        num_heads=8,
-        use_scale_shift_norm=True,
-    ).cuda()
+    model = unextv2_atto(out_chans=out_channels, use_time_emb=True).cuda()
+    # model = unextv2_pico(out_chans=out_channels, use_time_emb=True).cuda()
+    # model = unextv2_femto(out_chans=out_channels, use_time_emb=True).cuda()
+    # model = unextv2_nano(out_chans=out_channels, use_time_emb=True).cuda()
+    # model = UNet(
+    #     dims=2,
+    #     in_channels=3,
+    #     model_channels=128,
+    #     out_channels=out_channels,
+    #     num_res_blocks=2,
+    #     attention_resolutions=[2],
+    #     dropout=0.1,
+    #     channel_mult=[1, 2, 2, 2],
+    #     num_groups=32,
+    #     num_heads=8,
+    #     use_scale_shift_norm=False,
+    # ).cuda()
     # model = UNet2(1000, 128, [1, 2, 2, 2], [1], 2, 0.1).cuda()
 
     n_model_params = model_params(model)
