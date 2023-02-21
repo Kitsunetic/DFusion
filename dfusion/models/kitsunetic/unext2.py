@@ -287,11 +287,11 @@ class UNext2(nn.Module):
                     if legacy:
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
-                    layers.append(
-                        AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
-                        if not use_spatial_transformer
-                        else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim)
-                    )
+                    # layers.append(
+                    #     AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
+                    #     if not use_spatial_transformer
+                    #     else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim)
+                    # )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
                 input_block_chans.append(ch)
@@ -319,9 +319,9 @@ class UNext2(nn.Module):
             dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
         self.middle_block = TimestepEmbedSequential(
             ConvNextBlock(ch, kernel_size=kernel_sizes[-1], **res_kwargs),
-            AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
-            if not use_spatial_transformer
-            else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim),
+            # AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
+            # if not use_spatial_transformer
+            # else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim),
             ConvNextBlock(ch, kernel_size=kernel_sizes[-1], **res_kwargs),
         )
         self._feature_size += ch
@@ -343,18 +343,18 @@ class UNext2(nn.Module):
                     if legacy:
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
-                    layers.append(
-                        AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
-                        if not use_spatial_transformer
-                        else SpatialTransformer(
-                            ch,
-                            num_heads,
-                            dim_head,
-                            depth=transformer_depth,
-                            context_dim=context_dim,
-                            num_groups=num_groups,
-                        )
-                    )
+                    # layers.append(
+                    #     AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
+                    #     if not use_spatial_transformer
+                    #     else SpatialTransformer(
+                    #         ch,
+                    #         num_heads,
+                    #         dim_head,
+                    #         depth=transformer_depth,
+                    #         context_dim=context_dim,
+                    #         num_groups=num_groups,
+                    #     )
+                    # )
                 if level and i == num_res_blocks:
                     out_ch = ch
                     layers.append(
