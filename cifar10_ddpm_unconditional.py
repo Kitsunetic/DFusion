@@ -22,7 +22,8 @@ from torchvision.utils import make_grid, save_image
 from tqdm import tqdm
 
 from dfusion import DDIMSampler, DDPMSampler, DDPMTrainer, make_beta_schedule
-from dfusion.dfusion.diffusion2 import GaussianDiffusionSampler, GaussianDiffusionTrainer
+from dfusion.dfusion.diffusion2 import (GaussianDiffusionSampler,
+                                        GaussianDiffusionTrainer)
 from dfusion.dfusion.karras_sampler import KarrasSampler
 from dfusion.models.kitsunetic import UNet
 from dfusion.models.kitsunetic.unet2 import UNet as UNet2
@@ -60,6 +61,14 @@ def seed_everything(seed):
     if torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = False
+
+
+def model_params(model):
+    model_size = 0
+    for param in model.parameters():
+        if param.requires_grad:
+            model_size += param.data.nelement()
+    return model_size
 
 
 class AverageMeter(object):
@@ -188,7 +197,8 @@ def train(args, model: nn.Module, model_ema: nn.Module):
                         }
                         th.save(state_dict, args.result_dir / "best.pth")
 
-                pbar.clear()
+                # pbar.clear()
+                print(flush=True)
 
                 args.ema = False
                 eval(args, model, model_ema)
@@ -302,9 +312,13 @@ def main_worker(rank: int, args: argparse.Namespace):
         channel_mult=[1, 2, 2, 2],
         num_groups=32,
         num_heads=8,
-        use_scale_shift_norm=False,
+        use_scale_shift_norm=True,
     ).cuda()
     # model = UNet2(1000, 128, [1, 2, 2, 2], [1], 2, 0.1).cuda()
+
+    n_model_params = model_params(model)
+    print("Model Params: %.2fM" % (n_model_params / 1e6))
+
     model_ema: nn.Module = deepcopy(model)
     if args.ddp:
         model = DDP(model, device_ids=[args.gpu], find_unused_parameters=False)

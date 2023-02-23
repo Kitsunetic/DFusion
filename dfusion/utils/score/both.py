@@ -7,7 +7,7 @@ from tqdm import tqdm
 from .fid import calculate_frechet_distance, torch_cov
 from .inception import InceptionV3
 
-device = torch.device("cuda:0")
+device = torch.device("cuda")
 
 
 def get_inception_and_fid_score(
