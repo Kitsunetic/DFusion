@@ -164,7 +164,7 @@ class DiffusionBase(PostInitModule):
         # out_dict["model_var"] = model_var
         out_dict["model_log_var"] = model_log_var
 
-        clip = (lambda x: x.clamp_(-1.0, 1.0)) if self.clip_denoised else (lambda x: x)
+        clip = (lambda x: x.clamp(-1.0, 1.0)) if self.clip_denoised else (lambda x: x)
 
         # get mean
         if self.model_mean_type == "x_prev":
