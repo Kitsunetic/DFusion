@@ -23,6 +23,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+from functools import partial
+
 from dfusion.models.kitsunetic.unet_module import *
 
 
@@ -80,6 +82,7 @@ class UNet(nn.Module):
         transformer_depth=1,  # custom transformer support
         context_dim=None,  # custom transformer support
         legacy=True,
+        no_attn=False,
     ):
         super().__init__()
         if use_spatial_transformer:
@@ -119,7 +122,8 @@ class UNet(nn.Module):
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
 
         # layers option
-        res_kwargs = dict(
+        res_fn = partial(
+            ResBlock,
             emb_channels=time_embed_dim,
             dropout=dropout,
             num_groups=num_groups,
@@ -127,11 +131,14 @@ class UNet(nn.Module):
             use_checkpoint=use_checkpoint,
             use_scale_shift_norm=use_scale_shift_norm,
         )
-        attn_kwargs = dict(
+        attn_fn = partial(
+            AttentionBlock,
             use_checkpoint=use_checkpoint,
             use_new_attention_order=use_new_attention_order,
             num_groups=num_groups,
         )
+        if no_attn:
+            attn_fn = lambda *args, **kwargs: nn.Identity()
 
         # layers start:
         self.input_blocks = nn.ModuleList([TimestepEmbedSequential(conv_nd(dims, in_channels, model_channels, 3, padding=1))])
@@ -142,7 +149,7 @@ class UNet(nn.Module):
 
         for level, mult in enumerate(channel_mult):
             for _ in range(num_res_blocks):
-                layers = [ResBlock(ch, out_channels=mult * model_channels, **res_kwargs)]
+                layers = [res_fn(ch, out_channels=mult * model_channels)]
                 ch = mult * model_channels
                 if ds in attention_resolutions:
                     if num_head_channels == -1:
@@ -154,7 +161,7 @@ class UNet(nn.Module):
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
+                        attn_fn(ch, num_heads=num_heads, num_head_channels=dim_head)
                         if not use_spatial_transformer
                         else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim)
                     )
@@ -165,7 +172,7 @@ class UNet(nn.Module):
                 out_ch = ch
                 self.input_blocks.append(
                     TimestepEmbedSequential(
-                        ResBlock(ch, out_channels=out_ch, down=True, **res_kwargs)
+                        res_fn(ch, out_channels=out_ch, down=True)
                         if resblock_updown
                         else Downsample(ch, conv_resample, dims=dims, out_channels=out_ch)
                     )
@@ -184,11 +191,11 @@ class UNet(nn.Module):
             # num_heads = 1
             dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
         self.middle_block = TimestepEmbedSequential(
-            ResBlock(ch, **res_kwargs),
-            AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
+            res_fn(ch),
+            attn_fn(ch, num_heads=num_heads, num_head_channels=dim_head)
             if not use_spatial_transformer
             else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim),
-            ResBlock(ch, **res_kwargs),
+            res_fn(ch),
         )
         self._feature_size += ch
 
@@ -196,7 +203,7 @@ class UNet(nn.Module):
         for level, mult in list(enumerate(channel_mult))[::-1]:
             for i in range(num_res_blocks + 1):
                 ich = input_block_chans.pop()
-                layers = [ResBlock(ch + ich, out_channels=model_channels * mult, **res_kwargs)]
+                layers = [res_fn(ch + ich, out_channels=model_channels * mult)]
                 ch = model_channels * mult
                 if ds in attention_resolutions:
                     if num_head_channels == -1:
@@ -208,7 +215,7 @@ class UNet(nn.Module):
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        AttentionBlock(ch, num_heads=num_heads, num_head_channels=dim_head, **attn_kwargs)
+                        attn_fn(ch, num_heads=num_heads, num_head_channels=dim_head)
                         if not use_spatial_transformer
                         else SpatialTransformer(
                             ch,
@@ -222,7 +229,7 @@ class UNet(nn.Module):
                 if level and i == num_res_blocks:
                     out_ch = ch
                     layers.append(
-                        ResBlock(ch, out_channels=out_ch, up=True, **res_kwargs)
+                        res_fn(ch, out_channels=out_ch, up=True)
                         if resblock_updown
                         else Upsample(ch, conv_resample, dims=dims, out_channels=out_ch)
                     )
