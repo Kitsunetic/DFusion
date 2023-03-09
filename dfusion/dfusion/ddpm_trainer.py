@@ -29,6 +29,7 @@ class DDPMTrainer(DiffusionBase):
 
         with self.register_diffusion_parameters():
             # p2 loss weight, from https://arxiv.org/abs/2204.00227
+            self.do_p2 = p2_loss_weight_gamma > 0.0
             self.p2_loss_weight = (p2_loss_weight_k + self.alphas_cumprod / (1 - self.alphas_cumprod)) ** -p2_loss_weight_gamma
 
     def loss_fn(self, pred: Tensor, target: Tensor) -> Tensor:
@@ -88,7 +89,11 @@ class DDPMTrainer(DiffusionBase):
             losses["recon"] = self.loss_fn(model_out, target)
 
             # \mathcal L = \mathcal L_\text{simple} * \lambda_\text{p2}
-            losses["loss"] = losses["recon"] * self.p2_loss_weight[t]
+            if self.do_p2:
+                losses["loss"] = losses["recon"] * self.p2_loss_weight[t]
+            else:
+                losses["loss"] = losses["recon"]
+
             # \mathcal L_\text{hybrid}
             if "vlb" in losses:
                 losses["loss"] = losses["loss"] + losses["vlb"]
