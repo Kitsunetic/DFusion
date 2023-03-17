@@ -26,10 +26,10 @@ class DDPMTrainer(DiffusionBase):
 
         assert loss_type in "l2|rescaled_l2|l1|rescaled_l1|kl|rescaled_kl".split("|")
         self.loss_type = loss_type
+        self.do_p2 = p2_loss_weight_gamma > 0.0
 
         with self.register_diffusion_parameters():
             # p2 loss weight, from https://arxiv.org/abs/2204.00227
-            self.do_p2 = p2_loss_weight_gamma > 0.0
             self.p2_loss_weight = (p2_loss_weight_k + self.alphas_cumprod / (1 - self.alphas_cumprod)) ** -p2_loss_weight_gamma
 
     def loss_fn(self, pred: Tensor, target: Tensor) -> Tensor:
