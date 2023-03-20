@@ -77,12 +77,13 @@ class UNet(nn.Module):
         num_heads_upsample=-1,
         use_scale_shift_norm=True,
         resblock_updown=False,
-        use_new_attention_order=False,
         use_spatial_transformer=False,  # custom transformer support
         transformer_depth=1,  # custom transformer support
         context_dim=None,  # custom transformer support
-        legacy=True,
+        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers
         no_attn=False,
+        no_time_emb=False,
+        is_auto_encoder=False,
     ):
         super().__init__()
         if use_spatial_transformer:
@@ -108,14 +109,21 @@ class UNet(nn.Module):
 
         self.model_channels = model_channels
         self.num_classes = num_classes
+        self.no_time_emb = no_time_emb
+        self.is_auto_encoder = is_auto_encoder
 
         # time embedding
-        time_embed_dim = model_channels * 4
-        self.time_embed = nn.Sequential(
-            linear(model_channels, time_embed_dim),
-            nn.SiLU(),
-            linear(time_embed_dim, time_embed_dim),
-        )
+        if not no_time_emb or self.num_classes is not None:
+            time_embed_dim = model_channels * 4
+        else:
+            time_embed_dim = None
+
+        if not no_time_emb:
+            self.time_embed = nn.Sequential(
+                linear(model_channels, time_embed_dim),
+                nn.SiLU(),
+                linear(time_embed_dim, time_embed_dim),
+            )
 
         # class embedding
         if self.num_classes is not None:
@@ -131,16 +139,28 @@ class UNet(nn.Module):
             use_checkpoint=use_checkpoint,
             use_scale_shift_norm=use_scale_shift_norm,
         )
-        attn_fn = partial(
-            AttentionBlock,
-            use_checkpoint=use_checkpoint,
-            use_new_attention_order=use_new_attention_order,
-            num_groups=num_groups,
-        )
+        if not use_spatial_transformer:
+            attn_fn = lambda ch, num_heads, dim_head: AttentionBlock(
+                channels=ch,
+                num_heads=num_heads,
+                num_head_channels=dim_head,
+                use_checkpoint=use_checkpoint,
+                attention_type=attention_type,
+                num_groups=num_groups,
+            )
+        else:
+            attn_fn = lambda ch, num_heads, dim_head: SpatialTransformer(
+                in_channels=ch,
+                n_heads=num_heads,
+                d_head=dim_head,
+                depth=transformer_depth,
+                context_dim=context_dim,
+                attention_type=attention_type,
+            )
         if no_attn:
             attn_fn = lambda *args, **kwargs: nn.Identity()
 
-        # layers start:
+        # layers start
         self.input_blocks = nn.ModuleList([TimestepEmbedSequential(conv_nd(dims, in_channels, model_channels, 3, padding=1))])
         self._feature_size = model_channels
         input_block_chans = [model_channels]
@@ -157,14 +177,10 @@ class UNet(nn.Module):
                     else:
                         num_heads = ch // num_head_channels
                         dim_head = num_head_channels
-                    if legacy:
+                    if attention_type == "qkv_legacy":
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
-                    layers.append(
-                        attn_fn(ch, num_heads=num_heads, num_head_channels=dim_head)
-                        if not use_spatial_transformer
-                        else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim)
-                    )
+                    layers.append(attn_fn(ch, num_heads, dim_head))
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
                 input_block_chans.append(ch)
@@ -187,14 +203,12 @@ class UNet(nn.Module):
         else:
             num_heads = ch // num_head_channels
             dim_head = num_head_channels
-        if legacy:
+        if attention_type == "qkv_legacy":
             # num_heads = 1
             dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
         self.middle_block = TimestepEmbedSequential(
             res_fn(ch),
-            attn_fn(ch, num_heads=num_heads, num_head_channels=dim_head)
-            if not use_spatial_transformer
-            else SpatialTransformer(ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim),
+            attn_fn(ch, num_heads, dim_head),
             res_fn(ch),
         )
         self._feature_size += ch
@@ -202,8 +216,8 @@ class UNet(nn.Module):
         self.output_blocks = nn.ModuleList([])
         for level, mult in list(enumerate(channel_mult))[::-1]:
             for i in range(num_res_blocks + 1):
-                ich = input_block_chans.pop()
-                layers = [res_fn(ch + ich, out_channels=model_channels * mult)]
+                ich = ch + input_block_chans.pop() if not is_auto_encoder else ch
+                layers = [res_fn(ich, out_channels=model_channels * mult)]
                 ch = model_channels * mult
                 if ds in attention_resolutions:
                     if num_head_channels == -1:
@@ -211,21 +225,10 @@ class UNet(nn.Module):
                     else:
                         num_heads = ch // num_head_channels
                         dim_head = num_head_channels
-                    if legacy:
+                    if attention_type == "qkv_legacy":
                         # num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
-                    layers.append(
-                        attn_fn(ch, num_heads=num_heads, num_head_channels=dim_head)
-                        if not use_spatial_transformer
-                        else SpatialTransformer(
-                            ch,
-                            num_heads,
-                            dim_head,
-                            depth=transformer_depth,
-                            context_dim=context_dim,
-                            num_groups=num_groups,
-                        )
-                    )
+                    layers.append(attn_fn(ch, num_heads, dim_head))
                 if level and i == num_res_blocks:
                     out_ch = ch
                     layers.append(
@@ -237,6 +240,9 @@ class UNet(nn.Module):
                 self.output_blocks.append(TimestepEmbedSequential(*layers))
                 self._feature_size += ch
 
+        if not is_auto_encoder:
+            assert len(input_block_chans) == 0
+
         self.out = nn.Sequential(
             normalization(ch, num_groups),
             nn.SiLU(),
@@ -244,41 +250,61 @@ class UNet(nn.Module):
             # conv_nd(dims, model_channels, out_channels, 3, padding=1),
         )
 
-    def forward(self, x, t, context=None, y=None, **kwargs):
-        """
-        Apply the model to an input batch.
-        :param x: an [N x C x ...] Tensor of inputs.
-        :param t: a 1-D batch of timesteps.
-        :param context: conditioning plugged in via crossattn
-        :param y: an [N] Tensor of labels, if class-conditional.
-        :return: an [N x C x ...] Tensor of outputs.
-        """
-        if self.num_classes is not None:
-            assert y is not None, "must specify y if the model is class-conditional"
-        hs = []
-        t_emb = timestep_embedding(t, self.model_channels, repeat_only=False)
-        emb = self.time_embed(t_emb)
+    def get_embedding(self, t=None, y=None):
+        emb = 0
+
+        if not self.no_time_emb:
+            assert t is not None, "must specify `t` if the model has time embedding"
+            t_emb = timestep_embedding(t, self.model_channels, repeat_only=False)
+            emb += self.time_embed(t_emb)
 
         if self.num_classes is not None:
+            assert y is not None, "must specify `y` if the model is class-conditional"
             assert y.shape == (x.shape[0],)
-            emb = emb + self.label_emb(y)
+            emb += self.label_emb(y)
 
+        return emb
+
+    def encode(self, x, emb=None, context=None):
+        if not self.no_time_emb or self.num_classes is not None:
+            assert emb is not None
+        
+        hs = []
         h = x
+
         for module in self.input_blocks:
             h = module(h, emb, context)
-            hs.append(h)
+            if not self.is_auto_encoder:
+                hs.append(h)
+
+        return h, hs
+
+    def decode(self, h, hs=None, emb=None, context=None):
+        if not self.is_auto_encoder:
+            assert hs is not None
+        if not self.no_time_emb or self.num_classes is not None:
+            assert emb is not None
+            
         h = self.middle_block(h, emb, context)
+
         for module in self.output_blocks:
-            h = th.cat([h, hs.pop()], dim=1)
+            if not self.is_auto_encoder:
+                h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb, context)
 
         h = self.out(h)
         return h
 
+    def forward(self, x, t=None, context=None, y=None):
+        emb = self.get_embedding(t=t, y=y)
+        h, hs = self.encode(x, emb, context=context)
+        h = self.decode(h, hs, emb, context=context)
+        return h
+
 
 if __name__ == "__main__":
-    model = UNet(dims=2, in_channels=3, out_channels=6, num_heads=8)
-    x = th.rand(2, 3, 64, 64)
+    model = UNet(dims=1, in_channels=1, out_channels=1, num_head_channels=32, attention_type="xformers")
+    x = th.rand(2, 1, 1024)
     t = th.randint(0, 1000, (2,))
     out = model(x, t)
     print(out.shape)

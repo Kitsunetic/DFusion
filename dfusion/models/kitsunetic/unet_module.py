@@ -30,11 +30,15 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-from dfusion.models.kitsunetic.attention import SpatialTransformer
+from einops import rearrange
+from torch.utils.checkpoint import checkpoint
+
+from dfusion.models.kitsunetic.attention import (QKVAttention,
+                                                 QKVAttentionLegacy,
+                                                 SpatialTransformer)
 from dfusion.models.kitsunetic.modules import *
 from dfusion.models.kitsunetic.utils import *
 from dfusion.utils.indexing import unsqueeze_as
-from torch.utils.checkpoint import checkpoint
 
 
 class TimestepBlock(nn.Module):
@@ -267,11 +271,12 @@ class AttentionBlock(nn.Module):
         num_heads=1,
         num_head_channels=-1,
         use_checkpoint=False,
-        use_new_attention_order=False,
+        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers
         num_groups=32,
     ):
         super().__init__()
         self.channels = channels
+        self.attention_type = attention_type
         if num_head_channels == -1:
             self.num_heads = num_heads
         else:
@@ -282,12 +287,18 @@ class AttentionBlock(nn.Module):
         self.use_checkpoint = use_checkpoint
         self.norm = normalization(channels, num_groups)
         self.qkv = conv_nd(1, channels, channels * 3, 1)
-        if use_new_attention_order:
+        if attention_type == "qkv":
             # split qkv before split heads
             self.attention = QKVAttention(self.num_heads)
-        else:
+        elif attention_type == "qkv_legacy":
             # split heads before split qkv
             self.attention = QKVAttentionLegacy(self.num_heads)
+        elif attention_type == "xformers":
+            from xformers.components.attention import ScaledDotProduct
+
+            self.attention = ScaledDotProduct()
+        else:
+            raise NotImplementedError(attention_type)
 
         self.proj_out = zero_module(conv_nd(1, channels, channels, 1))
 
@@ -305,92 +316,14 @@ class AttentionBlock(nn.Module):
         b, c, *spatial = x.shape
         x = x.reshape(b, c, -1)
         qkv = self.qkv(self.norm(x))
-        h = self.attention(qkv)
+
+        if self.attention_type in ("qkv", "qkv_legacy"):
+            h = self.attention(qkv)
+        else:
+            q, k, v = rearrange(qkv, "b (x h c) l -> x b l h c", x=3, h=self.num_heads)
+            q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
+            h = self.attention(q, k, v)
+            h = rearrange(h, "b l h c -> b (h c) l").contiguous()
+
         h = self.proj_out(h)
         return (x + h).reshape(b, c, *spatial)
-
-
-def count_flops_attn(model, _x, y):
-    """
-    A counter for the `thop` package to count the operations in an
-    attention operation.
-    Meant to be used like:
-        macs, params = thop.profile(
-            model,
-            inputs=(inputs, timestamps),
-            custom_ops={QKVAttention: QKVAttention.count_flops},
-        )
-    """
-    b, c, *spatial = y[0].shape
-    num_spatial = int(np.prod(spatial))
-    # We perform two matmuls with the same number of ops.
-    # The first computes the weight matrix, the second computes
-    # the combination of the value vectors.
-    matmul_ops = 2 * b * (num_spatial**2) * c
-    model.total_ops += th.DoubleTensor([matmul_ops])
-
-
-class QKVAttentionLegacy(nn.Module):
-    """
-    A module which performs QKV attention. Matches legacy QKVAttention + input/ouput heads shaping
-    """
-
-    def __init__(self, n_heads):
-        super().__init__()
-        self.n_heads = n_heads
-
-    def forward(self, qkv):
-        """
-        Apply QKV attention.
-        :param qkv: an [N x (H * 3 * C) x T] tensor of Qs, Ks, and Vs.
-        :return: an [N x (H * C) x T] tensor after attention.
-        """
-        bs, width, length = qkv.shape
-        assert width % (3 * self.n_heads) == 0
-        ch = width // (3 * self.n_heads)
-        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
-        scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = th.einsum("bct,bcs->bts", q * scale, k * scale)  # More stable with f16 than dividing afterwards
-        # weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        weight = th.softmax(weight, dim=-1)
-        a = th.einsum("bts,bcs->bct", weight, v)
-        return a.reshape(bs, -1, length)
-
-    @staticmethod
-    def count_flops(model, _x, y):
-        return count_flops_attn(model, _x, y)
-
-
-class QKVAttention(nn.Module):
-    """
-    A module which performs QKV attention and splits in a different order.
-    """
-
-    def __init__(self, n_heads):
-        super().__init__()
-        self.n_heads = n_heads
-
-    def forward(self, qkv):
-        """
-        Apply QKV attention.
-        :param qkv: an [N x (3 * H * C) x T] tensor of Qs, Ks, and Vs.
-        :return: an [N x (H * C) x T] tensor after attention.
-        """
-        bs, width, length = qkv.shape
-        assert width % (3 * self.n_heads) == 0
-        ch = width // (3 * self.n_heads)
-        q, k, v = qkv.chunk(3, dim=1)
-        scale = 1 / math.sqrt(math.sqrt(ch))
-        weight = th.einsum(
-            "bct,bcs->bts",
-            (q * scale).view(bs * self.n_heads, ch, length),
-            (k * scale).view(bs * self.n_heads, ch, length),
-        )  # More stable with f16 than dividing afterwards
-        # weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
-        weight = th.softmax(weight, dim=-1)
-        a = th.einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
-        return a.reshape(bs, -1, length)
-
-    @staticmethod
-    def count_flops(model, _x, y):
-        return count_flops_attn(model, _x, y)
