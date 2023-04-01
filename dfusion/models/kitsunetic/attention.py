@@ -328,9 +328,11 @@ class CrossAttention(nn.Module):
             out = self.attention(q, k, v)
             out = out.transpose(1, 2).contiguous()  # (B, L, C)
         else:
-            q, k, v = map(lambda t: rearrange(t, "b (h c) l -> b l h c", h=self.heads).contiguous(), (q, k, v))
+            # q, k, v = map(lambda t: rearrange(t, "b (h c) l -> b l h c", h=self.heads).contiguous(), (q, k, v))
+            q, k, v = map(lambda t: rearrange(t, "b (h c) l -> (b h) l c", h=self.heads).contiguous(), (q, k, v))
             out = self.attention(q, k, v)
-            out = rearrange(out, "b l h c -> b l (h c)").contiguous()  # (B, L, C)
+            # out = rearrange(out, "b l h c -> b l (h c)").contiguous()  # (B, L, C)
+            out = rearrange(out, "(b h) l c -> b l (h c)", h=self.heads).contiguous()  # (B, L, C)
 
         return self.to_out(out)
 

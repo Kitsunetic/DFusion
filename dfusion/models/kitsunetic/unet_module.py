@@ -30,15 +30,12 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
-from torch.utils.checkpoint import checkpoint
-
-from dfusion.models.kitsunetic.attention import (QKVAttention,
-                                                 QKVAttentionLegacy,
-                                                 SpatialTransformer)
+from dfusion.models.kitsunetic.attention import QKVAttention, QKVAttentionLegacy, SpatialTransformer
 from dfusion.models.kitsunetic.modules import *
 from dfusion.models.kitsunetic.utils import *
 from dfusion.utils.indexing import unsqueeze_as
+from einops import rearrange
+from torch.utils.checkpoint import checkpoint
 
 
 class TimestepBlock(nn.Module):
@@ -320,10 +317,12 @@ class AttentionBlock(nn.Module):
         if self.attention_type in ("qkv", "qkv_legacy"):
             h = self.attention(qkv)
         else:
-            q, k, v = rearrange(qkv, "b (x h c) l -> x b l h c", x=3, h=self.num_heads)
-            q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
+            # q, k, v = rearrange(qkv, "b (x h c) l -> x b l h c", x=3, h=self.num_heads)
+            q, k, v = rearrange(qkv, "b (x h c) l -> x (b h) l c", x=3, h=self.num_heads).contiguous()
+            # q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
             h = self.attention(q, k, v)
-            h = rearrange(h, "b l h c -> b (h c) l").contiguous()
+            # h = rearrange(h, "b l h c -> b (h c) l").contiguous()
+            h = rearrange(h, "(b h) l c -> b (h c) l", h=self.num_heads).contiguous()
 
         h = self.proj_out(h)
         return (x + h).reshape(b, c, *spatial)
