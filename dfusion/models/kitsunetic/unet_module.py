@@ -30,12 +30,13 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
+from torch.utils.checkpoint import checkpoint
+
 from dfusion.models.kitsunetic.attention import QKVAttention, QKVAttentionLegacy, SpatialTransformer
 from dfusion.models.kitsunetic.modules import *
 from dfusion.models.kitsunetic.utils import *
 from dfusion.utils.indexing import unsqueeze_as
-from einops import rearrange
-from torch.utils.checkpoint import checkpoint
 
 
 class TimestepBlock(nn.Module):
@@ -304,7 +305,7 @@ class AttentionBlock(nn.Module):
         #     self._forward, (x,), self.parameters(), False
         # )  # TODO: check checkpoint usage, is True # TODO: fix the .half call!!!
         # return pt_checkpoint(self._forward, x)  # pytorch
-        if self.training:
+        if self.training and self.use_checkpoint:
             return checkpoint(self._forward, x)
         else:
             return self._forward(x)
