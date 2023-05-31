@@ -1,3 +1,7 @@
+# Results
+![CIFAR10_HEUN](assets/image/cifar10_heun.jpg)
+
+
 # DFusion
 
 A library to make it easy to implement diffusion models.
