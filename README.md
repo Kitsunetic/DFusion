@@ -4,7 +4,7 @@
 
 # DFusion
 
-A library to make it easy to implement diffusion models.
+Easy to use library for various implementtaions of denoising diffusion models
 
 The diffusion trainer and sampler implemented here can handle arbitrary shapes.
 For example, it can handle tensors with shape of `(N, C, ...)`, (e.g. `(N, C, 1, 2, 3, 4, 5, 6)`), where `N` is batch size and `C` is channel size).
@@ -33,7 +33,7 @@ Currently working on:
 # Installation
 
 ```sh
-pip install git+https://github.com/Kitsunetic/DFusion.git
+pip install dfusion
 ```
 
 

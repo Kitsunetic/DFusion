@@ -2,8 +2,8 @@ from setuptools import find_packages, setup
 
 setup(
     name="dfusion",
-    version="0.0.1",
-    description="A library to make it easy to implement diffusion models",
+    version="0.0.2",
+    description="Easy to use library for various implementtaions of denoising diffusion models",
     author="Kitsunetic",
     author_email="jh.shim.gg@gmail.com",
     url="https://github.com/Kitsunetic/DFusion.git",
@@ -15,10 +15,16 @@ setup(
     # tests_require=["pytest"],
     install_requires=[],
     extras_require={},
-    setup_requires=[],
+    setup_requires=["torch", "einops"],
     tests_require=[],
     # entry_points={
     #     "console_scripts": ["my-command=exampleproject.example:main"]
     # },
     # package_data={"exampleproject": ["data/schema.json"]},
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ],
+    python_requires=">=3",
 )
