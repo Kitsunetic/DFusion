@@ -260,7 +260,6 @@ class UNet(nn.Module):
 
         if self.num_classes is not None:
             assert y is not None, "must specify `y` if the model is class-conditional"
-            assert y.shape == (x.shape[0],)
             emb += self.label_emb(y)
 
         return emb
@@ -268,7 +267,7 @@ class UNet(nn.Module):
     def encode(self, x, emb=None, context=None):
         if not self.no_time_emb or self.num_classes is not None:
             assert emb is not None
-        
+
         hs = []
         h = x
 
@@ -284,7 +283,7 @@ class UNet(nn.Module):
             assert hs is not None
         if not self.no_time_emb or self.num_classes is not None:
             assert emb is not None
-            
+
         h = self.middle_block(h, emb, context)
 
         for module in self.output_blocks:
