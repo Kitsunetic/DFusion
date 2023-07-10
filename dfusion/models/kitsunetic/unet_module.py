@@ -269,7 +269,7 @@ class AttentionBlock(nn.Module):
         num_heads=1,
         num_head_channels=-1,
         use_checkpoint=False,
-        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers, flash
+        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers, flash, flash16
         num_groups=32,
     ):
         super().__init__()
@@ -295,7 +295,7 @@ class AttentionBlock(nn.Module):
             from xformers.components.attention import ScaledDotProduct
 
             self.attention = ScaledDotProduct()
-        elif attention_type in ("memory_efficient_attention", "flash"):
+        elif attention_type in ("memory_efficient_attention", "flash", "flash16"):
             from xformers.ops import memory_efficient_attention
 
             self.attention = memory_efficient_attention
@@ -325,7 +325,12 @@ class AttentionBlock(nn.Module):
             # q, k, v = rearrange(qkv, "b (x h c) l -> x b l h c", x=3, h=self.num_heads)
             q, k, v = rearrange(qkv, "b (x h c) l -> x (b h) l c", x=3, h=self.num_heads).contiguous()
             # q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
+            if self.attention_type == "flash16":
+                dtype = q.dtype
+                q, k, v = q.half(), k.half(), v.half()
             h = self.attention(q, k, v)
+            if self.attention_type == "flash16":
+                h = h.to(dtype)
             # h = rearrange(h, "b l h c -> b (h c) l").contiguous()
             h = rearrange(h, "(b h) l c -> b (h c) l", h=self.num_heads).contiguous()
 
