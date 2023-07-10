@@ -295,7 +295,7 @@ class AttentionBlock(nn.Module):
             from xformers.components.attention import ScaledDotProduct
 
             self.attention = ScaledDotProduct()
-        elif attention_type == "memory_efficient_attention":
+        elif attention_type in ("memory_efficient_attention", "flash"):
             from xformers.ops import memory_efficient_attention
 
             self.attention = memory_efficient_attention
