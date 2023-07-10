@@ -269,7 +269,7 @@ class AttentionBlock(nn.Module):
         num_heads=1,
         num_head_channels=-1,
         use_checkpoint=False,
-        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers
+        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers, flash
         num_groups=32,
     ):
         super().__init__()
@@ -295,6 +295,10 @@ class AttentionBlock(nn.Module):
             from xformers.components.attention import ScaledDotProduct
 
             self.attention = ScaledDotProduct()
+        elif attention_type == "memory_efficient_attention":
+            from xformers.ops import memory_efficient_attention
+
+            self.attention = memory_efficient_attention
         else:
             raise NotImplementedError(attention_type)
 
