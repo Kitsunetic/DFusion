@@ -80,7 +80,7 @@ class UNet(nn.Module):
         use_spatial_transformer=False,  # custom transformer support
         transformer_depth=1,  # custom transformer support
         context_dim=None,  # custom transformer support
-        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers
+        attention_type="qkv_legacy",  # qkv, qkv_legacy, xformers, memory_efficient_attention
         no_attn=False,
         no_time_emb=False,
         is_auto_encoder=False,
