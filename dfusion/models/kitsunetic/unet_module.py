@@ -256,6 +256,16 @@ class ResBlock(TimestepBlock):
         return self.skip_connection(x) + h
 
 
+class StackedResBlocks(TimestepEmbedSequential):
+    def __init__(self, num_blocks, *args, **kwargs):
+        m = [ResBlock(*args, **kwargs)]
+        kwargs.update({"up": False, "down": False, "channels": m[0].out_channels})
+        for _ in range(num_blocks):
+            m.append(ResBlock(*args, **kwargs))
+
+        super().__init__(*m)
+
+
 class AttentionBlock(nn.Module):
     """
     An attention block that allows spatial positions to attend to each other.
@@ -325,11 +335,11 @@ class AttentionBlock(nn.Module):
             # q, k, v = rearrange(qkv, "b (x h c) l -> x b l h c", x=3, h=self.num_heads)
             q, k, v = rearrange(qkv, "b (x h c) l -> x (b h) l c", x=3, h=self.num_heads).contiguous()
             # q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
-            if self.attention_type == "flash16":
+            if self.attention_type == "flash16" and q.device.type != "cpu":
                 dtype = q.dtype
                 q, k, v = q.half(), k.half(), v.half()
             h = self.attention(q, k, v)
-            if self.attention_type == "flash16":
+            if self.attention_type == "flash16" and q.device.type != "cpu":
                 h = h.to(dtype)
             # h = rearrange(h, "b l h c -> b (h c) l").contiguous()
             h = rearrange(h, "(b h) l c -> b (h c) l", h=self.num_heads).contiguous()
