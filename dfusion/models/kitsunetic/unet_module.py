@@ -153,8 +153,8 @@ class ResBlock(TimestepBlock):
     def __init__(
         self,
         channels,
-        emb_channels,
-        dropout,
+        emb_channels=None,
+        dropout=0.0,
         out_channels=None,
         num_groups=32,
         use_conv=False,
