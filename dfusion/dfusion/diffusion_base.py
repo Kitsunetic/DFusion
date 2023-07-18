@@ -103,14 +103,14 @@ class DiffusionBase(PostInitModule):
         return self.betas.device
 
     def _predict_xstart_from_eps(self, x_t, t, eps):
-        assert x_t.shape == eps.shape
+        assert x_t.shape == eps.shape, f"x_t={x_t.shape}, eps={eps.shape}"
         return (
             unsqueeze_as(self.sqrt_recip_alphas_cumprod[t], x_t) * x_t
             - unsqueeze_as(self.sqrt_recipm1_alphas_cumprod[t], x_t) * eps
         )
 
     def _predict_xstart_from_xprev(self, x_t, t, xprev):
-        assert x_t.shape == xprev.shape
+        assert x_t.shape == xprev.shape, f"x_t={x_t.shape}, xprev={xprev.shape}"
         return (  # (xprev - coef2*x_t) / coef1
             unsqueeze_as(1.0 / self.posterior_mean_coef1[t], x_t.shape) * xprev
             - unsqueeze_as(self.posterior_mean_coef2[t] / self.posterior_mean_coef1[t], x_t.shape) * x_t
